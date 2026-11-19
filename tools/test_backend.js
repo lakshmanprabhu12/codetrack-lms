@@ -2,6 +2,7 @@
 const fs = require('fs'), vm = require('vm'), path = require('path');
 const dir = p => path.join(__dirname, '..', p);
 vm.runInThisContext(fs.readFileSync(dir('tools/gas-mock.js'), 'utf8'));
+globalThis.HtmlService = { createHtmlOutputFromFile: n => { if (!['Index','Styles','App'].includes(n)) throw new Error('missing'); return {}; } };
 vm.runInThisContext(fs.readFileSync(dir('apps-script/Seed.gs'), 'utf8'), { filename: 'Seed.gs' });
 vm.runInThisContext(fs.readFileSync(dir('apps-script/Code.gs'), 'utf8'), { filename: 'Code.gs' });
 

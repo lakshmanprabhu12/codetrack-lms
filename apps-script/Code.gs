@@ -149,6 +149,15 @@ const ROUTES = {
  * ===================================================================*/
 
 function setup() {
+  if (typeof getSeedSyllabus !== 'function') {
+    throw new Error('Seed.gs is missing. Click + > Script, name it "Seed", paste the contents of apps-script/Seed.gs, save, then run setup() again.');
+  }
+  const missingHtml = ['Index', 'Styles', 'App'].filter(function (n) {
+    try { HtmlService.createHtmlOutputFromFile(n); return false; } catch (e) { return true; }
+  });
+  if (missingHtml.length) {
+    Logger.log('WARNING: HTML file(s) missing: ' + missingHtml.join(', ') + '. Add them (+ > HTML, name without .html) before deploying, or the web app will not load.');
+  }
   const props = PropertiesService.getScriptProperties();
 
   // 1. Spreadsheet: use the bound sheet if any, else the stored one, else create a new one
