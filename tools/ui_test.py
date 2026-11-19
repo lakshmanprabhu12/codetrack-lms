@@ -63,13 +63,27 @@ with sync_playwright() as pw:
     p.click(".sidenav [data-act=signOut]"); p.wait_for_timeout(500); shot(p, "s13_login")
     p.fill("#lg-user", "Priya Sharma"); p.fill("#lg-pass", "wrong"); p.click("form[data-form=login] button.btn.filled"); p.wait_for_timeout(700)
     assert "Wrong name or password" in p.inner_text("#lg-err"), "login error shown"
-    p.fill("#lg-pass", "pass"); p.click("form[data-form=login] button.btn.filled"); p.wait_for_timeout(900)
-    assert p.locator(".page-head h1").inner_text().startswith("Good"), "logged back in"
+    p.fill("#lg-pass", "pass"); p.click("form[data-form=login] button.btn.filled"); p.wait_for_timeout(1400)
+    assert p.locator(".welcome-title").count() == 1, "welcome screen after login"
+    shot(p, "w1_welcome_student_first")
+    p.click("#welcome-go"); p.wait_for_timeout(700)
+    assert p.locator(".page-head h1").inner_text().startswith("Good"), "dashboard after welcome"
+    # second login on same device: no tour, "welcome back"
+    p.click(".sidenav [data-act=signOut]"); p.wait_for_timeout(400)
+    p.fill("#lg-user", "priya.sharma"); p.fill("#lg-pass", "pass"); p.click("form[data-form=login] button.btn.filled"); p.wait_for_timeout(1400)
+    assert p.locator(".welcome-tour").count() == 0 and "Welcome back" in p.inner_text(".welcome-sub"), "returning welcome"
+    p.click("[data-act=openAssignmentW]") if p.locator("[data-act=openAssignmentW]").count() else p.click("#welcome-go")
+    p.wait_for_timeout(700)
+    assert p.locator(".page-head h1").count() == 1, "left welcome via to-do"
     p.context.close()
 
     # ---------- student, mobile ----------
     p = page_for(b, "as=student&tracks=1", w=390, h=844, mobile=True)
     shot(p, "m1_dashboard", full=True)
+    p.click("[data-act=navOpen]"); p.wait_for_timeout(300); p.click(".sidenav [data-act=signOut]"); p.wait_for_timeout(500)
+    p.fill("#lg-user", "Meena Raj"); p.fill("#lg-pass", "pass"); p.click("form[data-form=login] button.btn.filled"); p.wait_for_timeout(1400)
+    shot(p, "w3_welcome_mobile", full=True)
+    p.click("#welcome-go"); p.wait_for_timeout(600)
     p.click("[data-act=navOpen]"); p.wait_for_timeout(300); shot(p, "m2_nav")
     p.click(".sidenav .nav-item:has-text('Study plan')"); p.wait_for_timeout(400); shot(p, "m3_plan", full=True)
     p.context.close()
@@ -77,6 +91,12 @@ with sync_playwright() as pw:
     # ---------- admin ----------
     p = page_for(b, "as=admin&tracks=1")
     shot(p, "a1_overview", full=True)
+    p.click(".sidenav [data-act=signOut]"); p.wait_for_timeout(400)
+    p.fill("#lg-user", "admin"); p.fill("#lg-pass", "ChangeMe@123"); p.click("form[data-form=login] button.btn.filled"); p.wait_for_timeout(1400)
+    shot(p, "w2_welcome_admin")
+    p.click(".welcome-card[data-view=attendance]"); p.wait_for_timeout(600)
+    assert p.locator(".page-head h1").inner_text() == "Attendance", "admin card jumps to attendance"
+    nav(p, "Overview")
     p.click("tr.click[data-act=studentDetail]"); p.wait_for_timeout(400); shot(p, "a2_student_dialog"); p.keyboard.press("Escape")
     nav(p, "Attendance"); shot(p, "a3_attendance", full=True)
     p.click("[data-act=bulkAtt][data-mode=verify]"); p.wait_for_timeout(800)

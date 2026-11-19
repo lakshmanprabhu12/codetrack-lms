@@ -172,7 +172,7 @@ async function boot() {
 }
 function defaultView() { return S.data && S.data.role === 'admin' ? 'overview' : 'dashboard'; }
 function signOut(msg) {
-  S.token = null; S.data = null; S.materials = null; S.mounted = null; S.sub = {}; S.draft = {}; S.file = null;
+  S.token = null; S.data = null; S.materials = null; S.mounted = null; S.sub = {}; S.draft = {}; S.file = null; S.welcome = false;
   store(LS_KEY, null);
   closeDialog(); closeMenu();
   renderLogin(msg);
@@ -238,6 +238,7 @@ function renderChrome() {
 
 function render() {
   if (!S.data) return renderLogin();
+  if (S.welcome) return renderWelcome();
   if (!$('#page') || S.mounted !== S.data.role) mountShell();
   const valid = (S.data.role === 'admin' ? ADMIN_NAV : STUDENT_NAV).some(n => n.id === S.view);
   if (!valid) S.view = defaultView();
@@ -1073,10 +1074,99 @@ V.settings = () => {
 };
 
 /* ================================================================
+ * Welcome screen (shown once right after signing in)
+ * ================================================================ */
+const SEEN_KEY = 'codetrack_seen_';
+function renderWelcome() {
+  const d = S.data, u = d.user, admin = d.role === 'admin';
+  const firstTime = !load(SEEN_KEY + u.id);
+  S.mounted = null;
+  $('#app').innerHTML = `<div class="welcome-wrap"><div class="welcome">
+    <div class="welcome-head rise" style="--i:0">
+      ${avatar(u.name, true)}
+      <div><div class="muted">${fmtDate(d.today)} · ${esc(d.settings.courseTitle)}</div>
+        <h1 class="welcome-title">${firstTime ? 'Welcome to CodeTrack' : greet()}, ${esc(first(u.name))}</h1>
+        <div class="welcome-sub">${admin ? "Here's what needs your attention today." : (firstTime ? "Glad you're here. Here's your day at a glance." : "Welcome back! Here's your day at a glance.")}</div></div>
+    </div>
+    ${admin ? welcomeAdmin() : welcomeStudent(firstTime)}
+    <div class="welcome-actions rise" style="--i:6">
+      ${admin ? '' : `<button class="btn outlined" data-act="welcomeGo" data-view="assignments">${icon('checklist')} Today's to-dos</button>`}
+      <button class="btn filled" data-act="welcomeGo" data-view="${admin ? 'overview' : 'dashboard'}" id="welcome-go">${admin ? 'Open overview' : 'Go to my dashboard'} ${icon('arrow_forward')}</button>
+    </div>
+  </div></div>`;
+  setTimeout(() => { const b = $('#welcome-go'); if (b) b.focus(); }, 80);
+}
+function welcomeCard(i, ic, cls, label, value, sub, act) {
+  return `<button class="welcome-card rise" style="--i:${i}" ${act ? `data-act="welcomeGo" data-view="${act}"` : 'disabled'}>
+    <span class="lead-icon ${cls}">${icon(ic)}</span>
+    <span class="wc-label">${esc(label)}</span><span class="wc-value">${value}</span><span class="wc-sub">${sub || ''}</span></button>`;
+}
+function welcomeStudent(firstTime) {
+  const d = S.data, st = d.stats, lb = d.leaderboard;
+  const f = focusDays(), day = f.list[0];
+  const dueToday = (d.assignments || []).filter(a => (a.due || '').slice(0, 10) === d.today);
+  const pendingToday = dueToday.filter(a => ['todo', 'missing', 'rework'].indexOf(aState(a)) >= 0);
+  const allPending = pendingAssignments().length;
+  let checkin = '';
+  if (d.todayAttendance) {
+    const m = ATT[d.todayAttendance.status] || ATT.pending;
+    checkin = `<div class="welcome-note rise" style="--i:4">${icon(m.icon, 'fill')}<span>${d.todayAttendance.status === 'pending' ? 'Checked in at ' + fmtTime(d.todayAttendance.checkInAt) + ' · waiting for verification' : 'Attendance today: ' + m.label}</span></div>`;
+  } else if (d.checkInOpen) {
+    checkin = `<div class="welcome-note strong rise" style="--i:4">${icon('how_to_reg')}<span class="grow"><b>Class is on.</b> Check in before ${fmtTime(d.settings.checkinEnd)}.</span><button class="btn filled sm" data-act="checkIn">${icon('front_hand')} I'm here</button></div>`;
+  }
+  const todoList = pendingToday.length
+    ? `<div class="welcome-list rise" style="--i:5"><div class="small muted" style="font-weight:500;letter-spacing:.4px;margin-bottom:6px">DUE TODAY</div>${pendingToday.slice(0, 5).map(a =>
+        `<button class="welcome-todo" data-act="openAssignmentW" data-id="${esc(a.id)}">${icon('radio_button_unchecked')}<span class="grow">${esc(a.title)}</span>${icon('chevron_right')}</button>`).join('')}
+        ${pendingToday.length > 5 ? `<div class="small muted" style="padding:6px 4px 0">+${pendingToday.length - 5} more</div>` : ''}</div>`
+    : '';
+  const tour = firstTime ? `<div class="welcome-tour rise" style="--i:5">
+      <div class="h3" style="margin-bottom:10px">How CodeTrack works</div>
+      <div class="tour-steps">
+        <div class="tour-step"><span class="tour-n">1</span><div><b>Follow the plan</b><div class="small muted">Each day has Scrum, Pen & Paper and Code Lab. Tick each one in your study plan when you're done.</div></div></div>
+        <div class="tour-step"><span class="tour-n">2</span><div><b>Submit your work</b><div class="small muted">Open an assignment, paste your code or upload a .py file. Your instructor approves it or leaves a comment.</div></div></div>
+        <div class="tour-step"><span class="tour-n">3</span><div><b>Show up & earn points</b><div class="small muted">Tap "I'm here" between ${fmtTime(d.settings.checkinStart)} and ${fmtTime(d.settings.checkinEnd)}. Points for every day, submission and reflection.</div></div></div>
+      </div></div>` : '';
+  return `<div class="welcome-grid">
+      ${welcomeCard(1, 'menu_book', 'blue', f.label === 'Today' ? "Today's lesson" : f.label || 'Lesson', day ? 'Day ' + esc(day.day) : '—', day ? esc(day.title) : 'No lesson published yet', 'plan')}
+      ${welcomeCard(2, 'checklist', pendingToday.length ? 'amber' : 'green', 'Due today', pendingToday.length ? pendingToday.length + ' to do' : (dueToday.length ? 'All done' : 'Nothing'), allPending ? plural(allPending, 'pending task') + ' overall' : "You're all caught up", 'assignments')}
+      ${welcomeCard(3, 'stars', 'violet', 'Points', st.points, (lb.myRank ? 'Rank #' + lb.myRank + ' of ' + lb.total : '') + (st.streak ? ' · ' + plural(st.streak, 'day') + ' streak' : ''), 'profile')}
+    </div>
+    ${checkin}${todoList}${tour}`;
+}
+function welcomeAdmin() {
+  const d = S.data, c = d.counts;
+  const active = (d.students || []).filter(s => s.active).length;
+  const nextDate = (d.classDates || []).find(x => x >= d.today);
+  const wk = nextDate ? weekOfDate(nextDate) : null;
+  const wkRow = wk ? d.weeks.find(w => String(w.week) === wk) : null;
+  const todayLesson = d.days.find(x => x.date === d.today && x.track === 'common') || d.days.find(x => x.date === d.today);
+  const notes = [];
+  if (d.usingDefaultPassword) notes.push(`<div class="welcome-note warn rise" style="--i:5">${icon('warning')}<span class="grow">You're still using the default password.</span><button class="btn tonal sm" data-act="pwDialog">Change it</button></div>`);
+  if (wkRow && wkRow.published !== 'TRUE') notes.push(`<div class="welcome-note rise" style="--i:5">${icon('visibility_off')}<span class="grow">Week ${esc(wkRow.week)} · ${esc(wkRow.title)} isn't published yet.</span><button class="btn tonal sm" data-act="publishWeek" data-week="${esc(wkRow.week)}" data-on="1">Publish</button></div>`);
+  if (!active) notes.push(`<div class="welcome-note rise" style="--i:5">${icon('group_add')}<span class="grow">No students yet. Add them to get started.</span><button class="btn tonal sm" data-act="welcomeGo" data-view="students">Add students</button></div>`);
+  return `<div class="welcome-grid four">
+      ${welcomeCard(1, 'how_to_reg', c.pendingCheckins ? 'amber' : 'green', 'Check-ins', c.pendingCheckins, 'to verify', 'attendance')}
+      ${welcomeCard(2, 'rate_review', c.toReview ? 'amber' : 'green', 'Submissions', c.toReview, 'to review', 'review')}
+      ${welcomeCard(3, 'forum', c.openDoubts ? 'amber' : 'green', 'Doubts', c.openDoubts, 'waiting for an answer', 'adoubts')}
+      ${welcomeCard(4, 'alt_route', c.trackRequests ? 'amber' : 'green', 'Track requests', c.trackRequests, plural(active, 'active student'), 'students')}
+    </div>
+    ${todayLesson ? `<div class="welcome-note rise" style="--i:4">${icon('today')}<span class="grow">Today: <b>Day ${esc(todayLesson.day)} · ${esc(todayLesson.title)}</b></span></div>` : ''}
+    ${notes.join('')}`;
+}
+function leaveWelcome(view) {
+  if (S.data && S.data.user) store(SEEN_KEY + S.data.user.id, '1');
+  S.welcome = false;
+  S.mounted = null;
+  go(view || defaultView());
+}
+
+/* ================================================================
  * Actions (click), changes, inputs, forms
  * ================================================================ */
 const ACTIONS = {
-  go: el => go(el.dataset.view),
+  go: el => { if (S.welcome) return leaveWelcome(el.dataset.view); go(el.dataset.view); },
+  welcomeGo: el => leaveWelcome(el.dataset.view),
+  openAssignmentW: el => { leaveWelcome('assignments'); S.sub.assignment = el.dataset.id; S.file = null; renderPage(); },
   navOpen: () => { $('#sidenav').classList.add('open'); $('#scrim-nav').classList.add('open'); },
   navClose: closeNav,
   refresh: () => refresh(false),
@@ -1234,6 +1324,7 @@ const FORMS = {
       const r = await call('login', { username: v.username, password: v.password });
       S.token = r.token; store(LS_KEY, r.token);
       S.data = r.state; S.view = defaultView(); S.mounted = null;
+      S.welcome = true;
       render();
     } catch (e) {
       err.querySelector('span').textContent = e.message;
@@ -1317,6 +1408,7 @@ document.addEventListener('toggle', e => {
   if (d.matches && d.matches('details.day')) { if (d.open) S.openDays.add(d.dataset.id); else S.openDays.delete(d.dataset.id); }
 }, true);
 document.addEventListener('keydown', e => {
+  if (S.welcome && (e.key === 'Escape') && !$('#dialog-root').innerHTML) { leaveWelcome(); return; }
   if (e.key === 'Escape') { if ($('#menu')) closeMenu(); else if ($('#dialog-root').innerHTML) { if (S._confirm) ACTIONS.confirmNo(); else closeDialog(); } closeNav(); }
   if (e.key === 'Tab' && e.target.matches && e.target.matches('textarea.code-input')) {
     e.preventDefault();
