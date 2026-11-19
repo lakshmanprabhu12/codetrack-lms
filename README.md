@@ -2,6 +2,8 @@
 
 A lightweight learning management system for a 21-day Python internship, running entirely on **Google Apps Script** with a **Google Sheets** database and **Google Drive** for study materials and submissions.
 
+**Live app:** [https://script.google.com/macros/s/…/exec](https://script.google.com/macros/s/AKfycbw-19S3PMFzT7JrXCopO9VCjoY-Ari7A6k36qO8IZNZQFPkaGIYxdtQV9YrOpPZuWRNCg/exec)
+
 | Student view | Instructor view |
 |---|---|
 | ![Student dashboard](screenshots/student-dashboard.png) | ![Instructor overview](screenshots/admin-overview.png) |

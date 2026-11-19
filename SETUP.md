@@ -4,6 +4,14 @@ A learning management web app that runs on **Google Apps Script**, stores everyt
 
 ---
 
+## Live deployment
+
+**Web app URL (send this to students):** https://script.google.com/macros/s/AKfycbw-19S3PMFzT7JrXCopO9VCjoY-Ari7A6k36qO8IZNZQFPkaGIYxdtQV9YrOpPZuWRNCg/exec
+
+The URL stays the same when you publish new versions (Deploy → Manage deployments → ✏️ → Version: *New version*).
+
+---
+
 ## What's in this folder
 
 | File | What it is |
