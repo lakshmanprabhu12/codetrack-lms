@@ -1,10 +1,13 @@
 /**
- * CodeTrack — a lightweight LMS on Google Apps Script + Google Sheets.
+ * CodeTrack API — Google Apps Script + Google Sheets backend.
+ * The front end is a static site (docs/ in the GitHub repo, served by GitHub Pages)
+ * that calls this web app with fetch().
  *
- *  1. Paste every file of this project into one Apps Script project.
+ *  1. Paste Code.gs and Seed.gs into one Apps Script project.
  *  2. Select the function "setup" in the toolbar and click Run (authorize when asked).
  *  3. Deploy > New deployment > Web app  (Execute as: Me · Who has access: Anyone).
- *  4. Open the web app URL and sign in as  admin / ChangeMe@123  — then change the password.
+ *  4. Put the /exec URL in docs/config.js, open the GitHub Pages site and sign in as
+ *     admin / ChangeMe@123 — then change the password.
  */
 
 const APP = {
@@ -56,18 +59,33 @@ const DEFAULT_SETTINGS = {
 };
 
 /* =====================================================================
- * Web entry points
+ * Web entry points (JSON API)
  * ===================================================================*/
 
+/** Health check: open the /exec URL in a browser to confirm the API is live. */
 function doGet() {
-  return HtmlService.createTemplateFromFile('Index').evaluate()
-    .setTitle(APP.NAME)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  let ready = false;
+  try { ready = !!PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID'); } catch (e) { ready = false; }
+  return json_({ ok: true, app: APP.NAME, api: 'v1', ready: ready, message: ready ? 'CodeTrack API is running.' : 'Run setup() in the script editor first.' });
 }
 
-function include(name) {
-  return HtmlService.createHtmlOutputFromFile(name).getContent();
+/**
+ * The front end POSTs {action, token, payload} as a text/plain body (a "simple" CORS request,
+ * so browsers send no preflight). The JSON response comes back with CORS headers from Google.
+ */
+function doPost(e) {
+  let body = {};
+  try {
+    body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+  } catch (err) {
+    return json_({ ok: false, error: 'Bad request.' });
+  }
+  return ContentService.createTextOutput(api(body.action, body.token, body.payload))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function json_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
 /** Single RPC endpoint used by the front end: google.script.run.api(action, token, payload) */
@@ -152,12 +170,6 @@ function setup() {
   if (typeof getSeedSyllabus !== 'function') {
     throw new Error('Seed.gs is missing. Click + > Script, name it "Seed", paste the contents of apps-script/Seed.gs, save, then run setup() again.');
   }
-  const missingHtml = ['Index', 'Styles', 'App'].filter(function (n) {
-    try { HtmlService.createHtmlOutputFromFile(n); return false; } catch (e) { return true; }
-  });
-  if (missingHtml.length) {
-    Logger.log('WARNING: HTML file(s) missing: ' + missingHtml.join(', ') + '. Add them (+ > HTML, name without .html) before deploying, or the web app will not load.');
-  }
   const props = PropertiesService.getScriptProperties();
 
   // 1. Spreadsheet: use the bound sheet if any, else the stored one, else create a new one
@@ -207,7 +219,7 @@ function setup() {
   Logger.log('CodeTrack is ready.');
   Logger.log('Database: ' + ss.getUrl());
   Logger.log('Drive folder: ' + root.getUrl());
-  Logger.log('Next: Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone).');
+  Logger.log('Next: Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone), then put the /exec URL in docs/config.js.');
   Logger.log('Sign in with  ' + APP.ADMIN_USERNAME + ' / ' + APP.ADMIN_PASSWORD + '  and change the password.');
 }
 

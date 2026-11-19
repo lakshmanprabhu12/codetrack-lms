@@ -1,8 +1,13 @@
 # CodeTrack
 
-A lightweight learning management system for a 21-day Python internship, running entirely on **Google Apps Script** with a **Google Sheets** database and **Google Drive** for study materials and submissions.
+A lightweight learning management system for a 21-day Python internship.
 
-**Live app:** [https://script.google.com/macros/s/…/exec](https://script.google.com/macros/s/AKfycbw-19S3PMFzT7JrXCopO9VCjoY-Ari7A6k36qO8IZNZQFPkaGIYxdtQV9YrOpPZuWRNCg/exec)
+- **Frontend:** static site in [`docs/`](docs/) served by **GitHub Pages** → **https://lakshmanprabhu12.github.io/codetrack-lms/**
+- **Backend:** **Google Apps Script** JSON API with a **Google Sheets** database and **Google Drive** for study materials and submissions → `https://script.google.com/macros/s/AKfycbw-19S3PMFzT7JrXCopO9VCjoY-Ari7A6k36qO8IZNZQFPkaGIYxdtQV9YrOpPZuWRNCg/exec`
+
+```
+Browser (GitHub Pages)  ──fetch POST {action, token, payload}──▶  Apps Script doPost()  ──▶  Google Sheets / Drive
+```
 
 | Student view | Instructor view |
 |---|---|
@@ -19,12 +24,14 @@ A lightweight learning management system for a 21-day Python internship, running
 ## Repository layout
 
 ```
-apps-script/      Files to paste into the Apps Script project
-  Code.gs         Backend: sheet DB, auth, routes, setup()
+docs/             Front end (GitHub Pages)
+  index.html      Page shell
+  styles.css      Styling
+  app.js          App: student views + instructor panel, talks to the API
+  config.js       apiUrl = your Apps Script /exec URL
+apps-script/      Backend — paste into the Apps Script project
+  Code.gs         JSON API (doPost), sheet DB, auth, setup()
   Seed.gs         Default 21-day syllabus (generated from syllabus.json)
-  Index.html      Page shell
-  Styles.html     Styling
-  App.html        Front end (student + admin)
   appsscript.json Manifest (Asia/Kolkata, web app settings)
 syllabus.json     Editable syllabus — import via Admin → Syllabus → JSON
 SETUP.md          Step-by-step deployment and daily-use guide
@@ -33,7 +40,7 @@ tools/            Offline test harness (mocked Google services, UI tests)
 
 ## Quick start
 
-See **[SETUP.md](SETUP.md)**. In short: paste `apps-script/*` into a new Apps Script project → run `setup()` → Deploy as web app (Execute as *Me*, access *Anyone*) → sign in as `admin` and change the password.
+See **[SETUP.md](SETUP.md)**. In short: paste `Code.gs` + `Seed.gs` into an Apps Script project → run `setup()` → Deploy as web app (Execute as *Me*, access *Anyone*) → put the `/exec` URL in `docs/config.js` → enable GitHub Pages from `main` / `docs` → sign in as `admin` and change the password.
 
 ## Development
 

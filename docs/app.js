@@ -1,4 +1,3 @@
-<script>
 (function () {
 'use strict';
 
@@ -32,9 +31,7 @@ const ATT = {
 };
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-// Apps Script's HTML service treats a double slash inside template strings as a comment and cuts the line,
-// so URLs are kept in plain strings with escaped slashes.
-const DRIVE_FILE = 'https:\/\/drive.google.com/file/d/';
+const DRIVE_FILE = 'https://drive.google.com/file/d/';
 
 const STUDENT_NAV = [
   { id: 'dashboard',   icon: 'space_dashboard', label: 'Dashboard' },
@@ -110,21 +107,24 @@ function setLoading(n) {
   S.loading = Math.max(0, S.loading + n);
   const lb = $('#loadbar'); if (lb) lb.classList.toggle('on', S.loading > 0);
 }
-function call(action, payload) {
+const API_URL = (window.CODETRACK_CONFIG || {}).apiUrl || '';
+async function call(action, payload) {
+  if (!API_URL) throw new Error('API URL missing — set apiUrl in config.js.');
   setLoading(1);
-  return new Promise((resolve, reject) => {
-    google.script.run
-      .withSuccessHandler(raw => {
-        setLoading(-1);
-        let res;
-        try { res = JSON.parse(raw); } catch (e) { return reject(new Error('Unexpected server response.')); }
-        if (res.ok) return resolve(res.data);
-        if (res.error === 'SESSION_EXPIRED') { signOut('Your session expired. Please sign in again.'); return reject(new Error('Session expired.')); }
-        reject(new Error(res.error));
-      })
-      .withFailureHandler(err => { setLoading(-1); reject(new Error((err && err.message) || 'Network error — check your connection.')); })
-      .api(action, S.token, payload || {});
-  });
+  let res;
+  try {
+    // text/plain body = "simple" CORS request, so Apps Script needs no preflight
+    const r = await fetch(API_URL, { method: 'POST', redirect: 'follow', body: JSON.stringify({ action: action, token: S.token, payload: payload || {} }) });
+    if (!r.ok) throw new Error('Server error (' + r.status + '). Try again.');
+    res = await r.json();
+  } catch (e) {
+    throw new Error(e instanceof SyntaxError ? 'Unexpected server response.' : (/fetch|network/i.test(e.message) ? 'Network error — check your connection.' : e.message));
+  } finally {
+    setLoading(-1);
+  }
+  if (res.ok) return res.data;
+  if (res.error === 'SESSION_EXPIRED') { signOut('Your session expired. Please sign in again.'); throw new Error('Session expired.'); }
+  throw new Error(res.error);
 }
 async function act(action, payload, opts) {
   opts = opts || {};
@@ -1340,4 +1340,3 @@ setInterval(() => {
 if (window.hljs) { try { hljs.configure({ ignoreUnescapedHTML: true }); } catch (e) { /* ignore */ } }
 boot();
 })();
-</script>

@@ -50,23 +50,24 @@ const demo = `
   }
   const as = q.get('as') || 'student';
   localStorage.setItem('codetrack_token_v1', as === 'admin' ? T : P);
-  // google.script.run shim (async, JSON round trip like the real thing)
-  window.google = { script: {} };
-  Object.defineProperty(window.google.script, 'run', { get() {
-    let ok = () => {}, bad = () => {};
-    const r = { withSuccessHandler(f) { ok = f; return r; }, withFailureHandler(f) { bad = f; return r; },
-      api(a, t, p) { setTimeout(() => { try { clear(); ok(api(a, t, JSON.parse(JSON.stringify(p || {})))); } catch (e) { bad(e); } }, 120); } };
-    return r;
-  } });
+  // fetch shim: routes the front end's POSTs to doPost(), like the deployed web app
+  window.CODETRACK_CONFIG = { apiUrl: 'https://script.google.com/macros/s/TEST/exec' };
+  const realFetch = window.fetch;
+  window.fetch = (url, opts) => {
+    if (String(url).indexOf('script.google.com') < 0) return realFetch(url, opts);
+    return new Promise(res => setTimeout(() => { clear(); const out = doPost({ postData: { contents: opts.body } }).getContent();
+      res({ ok: true, status: 200, json: async () => JSON.parse(out) }); }, 120));
+  };
 })();
 </script>`;
 
-let html = R('apps-script/Index.html')
+let html = R('docs/index.html')
   .replace(/<link rel="preconnect"[^>]*>\s*/g, '')
   .replace(/<link rel="stylesheet" href="https:\/\/fonts[^>]*>\s*/g, '')
   .replace(/<link rel="stylesheet" href="https:\/\/cdnjs[^>]*>/, () => fonts)
-  .replace(/<script src="https:\/\/cdnjs[^>]*><\/script>/, `<script src="${NM('@highlightjs/cdn-assets/highlight.min.js')}"></script>`)
-  .replace("<?!= include('Styles'); ?>", () => R('apps-script/Styles.html'))
-  .replace("<?!= include('App'); ?>", () => demo + R('apps-script/App.html'));
+  .replace(/<script src="https:\/\/cdnjs[^>]*><\/script>/, () => `<script src="${NM('@highlightjs/cdn-assets/highlight.min.js')}"></script>`)
+  .replace('<link rel="stylesheet" href="styles.css">', () => '<style>' + R('docs/styles.css') + '</style>')
+  .replace('<script src="config.js"></script>', () => demo)
+  .replace('<script src="app.js"></script>', () => '<script>' + R('docs/app.js') + '</script>');
 fs.writeFileSync(path.join(__dirname, 'preview.html'), html);
 console.log('preview.html written', html.length);

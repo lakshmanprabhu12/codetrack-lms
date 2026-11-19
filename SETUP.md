@@ -1,72 +1,50 @@
 # CodeTrack — Setup Guide
 
-A learning management web app that runs on **Google Apps Script**, stores everything in a **Google Sheet**, and serves study files from **Google Drive**. It's free and needs no server. It runs under your Google account.
+CodeTrack has two halves:
 
----
+| Part | Where it runs | What it does |
+|---|---|---|
+| **Frontend** (`docs/`) | **GitHub Pages**: https://lakshmanprabhu12.github.io/codetrack-lms/ | The website students and you open |
+| **Backend** (`apps-script/`) | **Google Apps Script** under your Google account | JSON API that reads and writes the **Google Sheet** and **Drive** folders |
 
 ## Live deployment
 
-**Web app URL (send this to students):** https://script.google.com/macros/s/AKfycbw-19S3PMFzT7JrXCopO9VCjoY-Ari7A6k36qO8IZNZQFPkaGIYxdtQV9YrOpPZuWRNCg/exec
-
-The URL stays the same when you publish new versions (Deploy → Manage deployments → ✏️ → Version: *New version*).
-
----
-
-## What's in this folder
-
-| File | What it is |
-|---|---|
-| `apps-script/Code.gs` | Backend: database, login, attendance, points, admin actions, `setup()` |
-| `apps-script/Seed.gs` | The 21-day syllabus (common Days 1–12 + 4 tracks + Day 21), loaded on first setup |
-| `apps-script/Index.html` | Page shell |
-| `apps-script/Styles.html` | Styling |
-| `apps-script/App.html` | The web app (student views + instructor panel) |
-| `apps-script/appsscript.json` | Project manifest (timezone Asia/Kolkata, web-app settings) |
-| `syllabus.json` | Same syllabus as JSON — edit it and paste into **Admin → Syllabus → Import / export JSON** |
+- **App (send this to students):** https://lakshmanprabhu12.github.io/codetrack-lms/
+- **API:** https://script.google.com/macros/s/AKfycbw-19S3PMFzT7JrXCopO9VCjoY-Ari7A6k36qO8IZNZQFPkaGIYxdtQV9YrOpPZuWRNCg/exec. If you open it in a browser, you should see `{"ok":true,"app":"CodeTrack",...}`.
 
 ---
 
-## 1. Create the Apps Script project (5 minutes)
+## 1. Backend: Apps Script (one time)
 
-1. Go to **https://script.google.com** → **New project**. Rename it **CodeTrack**.
-2. In the editor you'll see `Code.gs`. Replace its contents with `apps-script/Code.gs`.
-3. Click **+** next to *Files* → **Script** → name it `Seed` → paste `apps-script/Seed.gs`.
-4. Click **+** → **HTML** three times and create `Index`, `Styles` and `App` (type the names **without** `.html`). Paste each file's contents.
-5. *(Optional but recommended)* **Project Settings** (gear icon) → tick **Show "appsscript.json" manifest file** → open it and paste `apps-script/appsscript.json`. This sets the time zone to India.
-   If you skip this, set **Project Settings → Time zone → (GMT+05:30) India Standard Time** instead.
+1. Go to **https://script.google.com** → **New project** → rename it **CodeTrack**.
+2. Replace the contents of `Code.gs` with `apps-script/Code.gs`.
+3. **+** → **Script** → name it `Seed` → paste `apps-script/Seed.gs`.
+4. *(Recommended)* Go to **Project Settings** → tick **Show "appsscript.json"** → paste `apps-script/appsscript.json`. This sets the time zone to India. If you skip this step, set **Time zone → (GMT+05:30) India Standard Time** in Project Settings instead.
+5. Choose **`setup`** in the function dropdown → click **Run** → allow the permissions (**Advanced → Go to CodeTrack → Allow**).
+   This creates the **CodeTrack Database** Sheet and the **CodeTrack** Drive folder (Study Materials + Student Submissions). It's safe to run again.
+6. Go to **Deploy → New deployment → Web app**, set **Execute as: Me** and **Who has access: Anyone**, then click **Deploy** and copy the `/exec` URL.
 
-## 2. Run setup once
+> **Who has access** must be *Anyone*, or the website can't reach the API. Data is still protected by each person's name and password.
 
-1. In the toolbar's function dropdown pick **`setup`** → click **Run**.
-2. Google asks for permission → **Review permissions** → choose your account → **Advanced → Go to CodeTrack (unsafe)** → **Allow**. (It says "unsafe" only because the app is yours and not verified by Google.)
-3. Open **Execution log**. You'll see links to:
-   - **CodeTrack Database**, a Google Sheet with tabs: Users, Days, Assignments, Submissions, Attendance, Points…
-   - **CodeTrack** folder in Drive with **Study Materials** (sub-folders `Common`, `Week 1–4`, `Track - …`) and **Student Submissions**
+## 2. Frontend: GitHub Pages (one time)
 
-You can run `setup()` again any time. It won't duplicate anything.
+1. Put the `/exec` URL in **`docs/config.js`** as `apiUrl`, then commit.
+2. In the repo, go to **Settings → Pages → Build and deployment**: set **Source** to *Deploy from a branch*, **Branch** to `main`, and the folder to **`/docs`**, then click **Save**.
+3. After about a minute the site is live at `https://<your-user>.github.io/codetrack-lms/`.
 
-## 3. Deploy as a web app
+## 3. First login
 
-1. **Deploy → New deployment** → gear icon → **Web app**
-2. **Execute as:** *Me* · **Who has access:** *Anyone*
-3. **Deploy** → copy the **Web app URL** (ends in `/exec`). This is the link you send to students.
-
-> "Anyone" means the page opens without a Google login. Students still need the name and password you give them, and the data stays private in your Sheet.
-
-## 4. First login
-
-Open the URL and sign in with **`admin` / `ChangeMe@123`**. Then:
+Open the site and sign in with **`admin` / `ChangeMe@123`**, then:
 
 1. **Change the password** (a yellow banner reminds you).
-2. **Students → Bulk add**, then paste one student per line:
-   ```
-   Priya Sharma, priya@123
-   Arun Kumar, arun.k, arun@123
-   ```
-   (`Name, password` or `Name, username, password`). Students sign in with their **name** or username.
-3. Send each student the URL and their password.
+2. Go to **Students → Bulk add** and enter one student per line as `Name, password` (or `Name, username, password`).
+3. Send students the site link. They sign in with their **name** and password.
 
----
+## Updating later
+
+- **Frontend change** (anything in `docs/`): commit and push. GitHub Pages redeploys in about a minute.
+- **Backend change** (`Code.gs` / `Seed.gs`): paste the new code, then go to **Deploy → Manage deployments → ✏️ → Version: New version → Deploy**. The `/exec` URL stays the same, so `config.js` doesn't change.
+- If you ever create a **new** deployment instead, its URL is different. Update `docs/config.js` with the new URL.
 
 ## Daily routine (instructor)
 
@@ -107,19 +85,18 @@ Students see the **top 3 + their own rank**. You see everyone.
   Weeks, days and tracks get replaced. Assignments are added or updated by `id`. Progress, submissions and attendance stay. Keep day ids (`d05`, `d14-web`) the same so ticked sessions stay linked.
 - Class days are weekdays from **19 Nov to 17 Dec 2026**. Change dates per day if you skip a day.
 
-## Updating the code later
-
-Edit the files in the script editor, then **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**. The URL stays the same.
-
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
 | "CodeTrack is not set up yet" | Run `setup()` in the editor. |
+| "Network error" on the website | Open the `/exec` URL in a browser. It should show `"ok":true`. If not, check that the deployment has access set to **Anyone**. |
+| "API URL missing" | Set `apiUrl` in `docs/config.js`. |
 | Locked out of admin | Run `resetAdminPassword()` in the editor. The password becomes `ChangeMe@123`. |
 | Student forgot password | Students → ✏️ → type a new password → Save. |
 | Check-in times look wrong | Set the project time zone to India (step 1.5). |
 | Students can't open a Drive file | The file must be inside *Study Materials*. If it's a shortcut to a file elsewhere, share that file as "Anyone with the link". |
-| Changes don't show for students | Did you create a **new version** when re-deploying? |
+| Backend changes don't take effect | Did you deploy a **new version**? |
+| Frontend changes don't show | Wait about a minute for Pages, then hard-refresh (Ctrl+Shift+R). |
 
 Data lives in the **CodeTrack Database** sheet. You can read it, export it, or fix a value by hand. Keep the header row as is.

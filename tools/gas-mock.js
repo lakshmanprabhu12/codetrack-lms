@@ -76,6 +76,10 @@
   G.__logs = [];
   G.Logger = { log: m => { G.__logs.push(String(m)); } };
   G.MimeType = { PLAIN_TEXT: 'text/plain' };
+  G.ContentService = {
+    MimeType: { JSON: 'application/json' },
+    createTextOutput: text => { const o = { _text: String(text), _mime: 'text/plain', getContent: () => o._text, setMimeType: m => { o._mime = m; return o; } }; return o; }
+  };
 
   // ---------- Spreadsheet ----------
   const books = {};
