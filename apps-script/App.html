@@ -32,6 +32,9 @@ const ATT = {
 };
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+// Apps Script's HTML service treats a double slash inside template strings as a comment and cuts the line,
+// so URLs are kept in plain strings with escaped slashes.
+const DRIVE_FILE = 'https:\/\/drive.google.com/file/d/';
 
 const STUDENT_NAV = [
   { id: 'dashboard',   icon: 'space_dashboard', label: 'Dashboard' },
@@ -1109,7 +1112,7 @@ const ACTIONS = {
     const t = track(el.dataset.id);
     if (await confirmDialog('Choose ' + t.name + '?', esc(t.description) + '<br><br>Your instructor will confirm your choice.', 'Request track')) act('requestTrack', { trackId: t.id });
   },
-  previewFile: el => openDialog(el.dataset.name, `<div class="dialog-body" style="padding-bottom:20px"><iframe src="https://drive.google.com/file/d/${encodeURIComponent(el.dataset.id)}/preview" style="width:100%;height:70vh;border:0;border-radius:12px;background:var(--surface-2)" allow="autoplay"></iframe></div>`, true),
+  previewFile: el => openDialog(el.dataset.name, `<div class="dialog-body" style="padding-bottom:20px"><iframe src="${DRIVE_FILE}${encodeURIComponent(el.dataset.id)}/preview" style="width:100%;height:70vh;border:0;border-radius:12px;background:var(--surface-2)" allow="autoplay"></iframe></div>`, true),
   materialsRefresh: () => loadMaterials(true),
 
   // admin

@@ -224,5 +224,9 @@ ok(/Too many/.test(err('login', null, { username: 'meena.r', password: 'meena99'
 // --- sizes
 ad = must('bootstrap', T);
 console.log('admin state size:', JSON.stringify(ad).length, 'bytes; student:', JSON.stringify(must('bootstrap', P2.length ? must('login', null, { username: 'priya.sharma', password: 'newpass' }).token : '')).length);
+// --- Apps Script HtmlService strips '//' after code on a line: only full-line comments allowed
+const appJs = /<script>([\s\S]*?)<\/script>/.exec(fs.readFileSync(dir('apps-script/App.html'), 'utf8'))[1];
+const bad = appJs.split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => /\/\//.test(l.replace(/^\s*\/\/.*$/, '').replace(/\s+\/\/ [^'"`]*$/, '')));
+ok(!bad.length, 'no // inside App.html code lines: ' + bad.map(b => b[0]).join(','));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
