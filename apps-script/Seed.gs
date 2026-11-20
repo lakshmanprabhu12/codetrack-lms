@@ -30,6 +30,12 @@ function getSeedSyllabus() {
         "name": "AI & Machine Learning",
         "icon": "psychology",
         "description": "Teach computers to learn from data with scikit-learn: regression, classification and model evaluation."
+      },
+      {
+        "id": "genai",
+        "name": "Generative AI & LLM Apps",
+        "icon": "auto_awesome",
+        "description": "Build apps on top of large language models: API calls, prompt engineering, chatbots with memory, a chat UI and answering questions from your own documents."
       }
     ],
     "weeks": [
@@ -236,6 +242,18 @@ function getSeedSyllabus() {
         "outcomes": "Install packages; use NumPy arrays for fast numeric work."
       },
       {
+        "id": "d13-genai",
+        "day": 13,
+        "week": 3,
+        "date": "2026-12-07",
+        "track": "genai",
+        "title": "Modules, pip, APIs & JSON",
+        "scrum": "How apps talk to AI services: HTTP APIs, JSON, API keys, and why keys must never be shared or committed.",
+        "paper": "Read a sample JSON reply from an AI API and write the path to the answer text, the token count and the model name.",
+        "code": "venv, `pip install requests python-dotenv`, call a free public JSON API, store a secret in a `.env` file and load it with `os.getenv`.",
+        "outcomes": "Call web APIs from Python, read JSON, and keep API keys safe."
+      },
+      {
         "id": "d13-web",
         "day": 13,
         "week": 3,
@@ -282,6 +300,18 @@ function getSeedSyllabus() {
         "paper": "Draw a 3x4 marks matrix; compute row and column averages by hand.",
         "code": "Reshape, slice rows/columns, boolean filtering, aggregations by axis.",
         "outcomes": "Slice and filter 2D data; aggregate along rows and columns."
+      },
+      {
+        "id": "d14-genai",
+        "day": 14,
+        "week": 3,
+        "date": "2026-12-08",
+        "track": "genai",
+        "title": "How LLMs Work & Your First AI Call",
+        "scrum": "Tokens, context window, temperature, and why LLMs can be confidently wrong (hallucinations).",
+        "paper": "Predict how temperature 0 vs 1 changes answers to the same question; estimate tokens for a short paragraph.",
+        "code": "Get a free API key (e.g. Google AI Studio / Gemini), install the SDK and send your first prompt from Python; try different temperatures.",
+        "outcomes": "Explain tokens and temperature; send prompts to an LLM from Python."
       },
       {
         "id": "d14-web",
@@ -332,6 +362,18 @@ function getSeedSyllabus() {
         "outcomes": "Load and explore tabular data with Pandas."
       },
       {
+        "id": "d15-genai",
+        "day": 15,
+        "week": 3,
+        "date": "2026-12-09",
+        "track": "genai",
+        "title": "Prompt Engineering in Code",
+        "scrum": "System prompts, roles, few-shot examples, and asking for structured output.",
+        "paper": "Write 3 versions of a prompt for the same task (vague, specific, few-shot) and predict which works best.",
+        "code": "Prompt templates with f-strings, few-shot examples, asking for JSON and parsing it with `json.loads`, retrying on bad JSON.",
+        "outcomes": "Write reliable prompts and turn LLM output into Python data."
+      },
+      {
         "id": "d15-web",
         "day": 15,
         "week": 3,
@@ -378,6 +420,18 @@ function getSeedSyllabus() {
         "paper": "Given a messy table on paper, mark every problem and decide how to fix each one.",
         "code": "`isna`, `fillna`, `dropna`, `astype`, `drop_duplicates`, `str.strip/lower`, date parsing.",
         "outcomes": "Find and fix common data quality problems."
+      },
+      {
+        "id": "d16-genai",
+        "day": 16,
+        "week": 3,
+        "date": "2026-12-10",
+        "track": "genai",
+        "title": "Build a Chatbot with Memory",
+        "scrum": "Conversations are just lists of messages; the model only remembers what you send back.",
+        "paper": "Draw the messages list after 3 turns of a conversation; mark what is sent on each call.",
+        "code": "Command-line chatbot with a `while` loop, a system prompt, message history as a list of dicts, `/reset` and `/quit` commands.",
+        "outcomes": "Build a multi-turn chatbot and manage its memory."
       },
       {
         "id": "d16-web",
@@ -428,6 +482,18 @@ function getSeedSyllabus() {
         "outcomes": "Summarise data by groups; combine related tables."
       },
       {
+        "id": "d17-genai",
+        "day": 17,
+        "week": 3,
+        "date": "2026-12-11",
+        "track": "genai",
+        "title": "Chat UI with Streamlit",
+        "scrum": "Turning a script into a web app; Streamlit's chat components and session state.",
+        "paper": "Sketch the chat screen: where messages, input box and sidebar settings go.",
+        "code": "`pip install streamlit`, `st.chat_message`, `st.chat_input`, `st.session_state`, sidebar to change temperature and system prompt.",
+        "outcomes": "Give your chatbot a web interface."
+      },
+      {
         "id": "d17-web",
         "day": 17,
         "week": 3,
@@ -474,6 +540,18 @@ function getSeedSyllabus() {
         "paper": "Sketch the best chart for 4 different questions and explain why.",
         "code": "Plot with matplotlib and pandas `.plot()`, titles, labels, saving figures.",
         "outcomes": "Communicate findings with clear charts."
+      },
+      {
+        "id": "d18-genai",
+        "day": 18,
+        "week": 4,
+        "date": "2026-12-14",
+        "track": "genai",
+        "title": "Answer from Your Own Documents (RAG basics)",
+        "scrum": "Why LLMs don't know your notes; retrieval-augmented generation in plain words: find relevant text, then ask.",
+        "paper": "Split a one-page note into chunks by hand and pick the chunks that answer 2 questions.",
+        "code": "Read text files, split into chunks, find the best chunks with simple keyword scoring (or embeddings), put them into the prompt, cite the source.",
+        "outcomes": "Make an LLM answer from given documents instead of guessing."
       },
       {
         "id": "d18-web",
@@ -524,6 +602,18 @@ function getSeedSyllabus() {
         "outcomes": "Build a repeatable analysis that outputs an Excel report."
       },
       {
+        "id": "d19-genai",
+        "day": 19,
+        "week": 4,
+        "date": "2026-12-15",
+        "track": "genai",
+        "title": "Tools, Safety, Cost & Deploy",
+        "scrum": "Function/tool calling idea, rate limits, cost per token, hallucination checks, privacy of user data.",
+        "paper": "List 5 ways a chatbot can fail and one guard for each.",
+        "code": "Error handling and retries, a simple tool (calculator/date) the bot can call, logging usage, deploying the Streamlit app to Streamlit Community Cloud.",
+        "outcomes": "Make an LLM app robust, safe and shareable."
+      },
+      {
         "id": "d19-web",
         "day": 19,
         "week": 4,
@@ -570,6 +660,18 @@ function getSeedSyllabus() {
         "paper": "Plan the analysis on paper: questions, cleaning steps, charts.",
         "code": "Build the full analysis: clean, analyse, chart, and write findings.",
         "outcomes": "Deliver a complete data analysis project."
+      },
+      {
+        "id": "d20-genai",
+        "day": 20,
+        "week": 4,
+        "date": "2026-12-16",
+        "track": "genai",
+        "title": "Capstone Build",
+        "scrum": "Pick a chatbot or AI assistant idea and agree scope.",
+        "paper": "Plan: users, prompts, data sources, screens, failure cases.",
+        "code": "Build the LLM app end to end.",
+        "outcomes": "Deliver a working generative-AI application."
       },
       {
         "id": "d20-web",
@@ -999,6 +1101,78 @@ function getSeedSyllabus() {
         "track": "ai",
         "title": "Capstone: ML project",
         "description": "Submit your notebook/script: data prep, model, evaluation and a short conclusion in comments.",
+        "due": "2026-12-17T09:00",
+        "active": true
+      },
+      {
+        "id": "a13-genai",
+        "dayId": "d13-genai",
+        "track": "genai",
+        "title": "API & secrets warm-up",
+        "description": "Call a free public API, print 3 values from the JSON, and load a fake key from `.env` with python-dotenv (never paste a real key). Submit the code.",
+        "due": "2026-12-07T23:59",
+        "active": true
+      },
+      {
+        "id": "a14-genai",
+        "dayId": "d14-genai",
+        "track": "genai",
+        "title": "My first AI call",
+        "description": "Script that asks the user a question, sends it to an LLM and prints the answer and the tokens used. Run it at two temperatures and paste both outputs as comments.",
+        "due": "2026-12-08T23:59",
+        "active": true
+      },
+      {
+        "id": "a15-genai",
+        "dayId": "d15-genai",
+        "track": "genai",
+        "title": "Resume-line generator",
+        "description": "Given a skill and a project, the program asks the LLM for 3 resume bullet points as JSON and prints them as a numbered list. Handle invalid JSON.",
+        "due": "2026-12-09T23:59",
+        "active": true
+      },
+      {
+        "id": "a16-genai",
+        "dayId": "d16-genai",
+        "track": "genai",
+        "title": "CLI study buddy",
+        "description": "Chatbot that helps a student revise Python basics, keeps history, supports /reset and /quit, and trims history after 10 turns.",
+        "due": "2026-12-10T23:59",
+        "active": true
+      },
+      {
+        "id": "a17-genai",
+        "dayId": "d17-genai",
+        "track": "genai",
+        "title": "Chatbot web app",
+        "description": "Streamlit version of your study buddy with chat history and a sidebar setting. Submit app.py and a screenshot description of it running.",
+        "due": "2026-12-11T23:59",
+        "active": true
+      },
+      {
+        "id": "a18-genai",
+        "dayId": "d18-genai",
+        "track": "genai",
+        "title": "Notes Q&A bot",
+        "description": "Bot that answers questions only from the Python Prerequisites notes (as .txt), shows which chunk it used, and says \"I don't know\" when the answer isn't there.",
+        "due": "2026-12-14T23:59",
+        "active": true
+      },
+      {
+        "id": "a19-genai",
+        "dayId": "d19-genai",
+        "track": "genai",
+        "title": "Robust & deployed",
+        "description": "Add error handling, a usage log and one tool to your chatbot, then deploy it. Submit app.py and the live link (no API keys in code!).",
+        "due": "2026-12-15T23:59",
+        "active": true
+      },
+      {
+        "id": "a20-genai",
+        "dayId": "d20-genai",
+        "track": "genai",
+        "title": "Capstone: LLM app",
+        "description": "Submit your app code with a comment block: the problem, how it works, how to run it, and the live link if deployed. Never include API keys.",
         "due": "2026-12-17T09:00",
         "active": true
       }

@@ -25,13 +25,13 @@ setup();
 ok(__logs.some(l => /CodeTrack is ready/.test(l)), 'setup logs ready');
 setup();                                        // idempotent
 clearMem();
-ok(rows_('Days').length === 45, 'seeded 45 days, got ' + rows_('Days').length);
-ok(rows_('Assignments').length === 45, 'seeded 45 assignments');
+ok(rows_('Days').length === 53, 'seeded 53 days, got ' + rows_('Days').length);
+ok(rows_('Assignments').length === 53, 'seeded 53 assignments');
 ok(rows_('Users').filter(u => u.role === 'admin').length === 1, 'one admin after two setups');
-ok(rows_('Tracks').length === 4, '4 tracks');
+ok(rows_('Tracks').length === 5, '5 tracks');
 const mat = DriveApp.getFolderById(PropertiesService.getScriptProperties().getProperty('MATERIALS_FOLDER_ID'));
 const sub = []; const it = mat.getFolders(); while (it.hasNext()) sub.push(it.next().getName());
-ok(sub.length === 9, 'material folders created once: ' + sub.join(', '));
+ok(sub.length === 10, 'material folders created once: ' + sub.join(', '));
 
 // --- admin login
 ok(/Wrong name or password/.test(err('login', null, { username: 'admin', password: 'nope' })), 'bad password rejected');
@@ -176,15 +176,15 @@ const names = d => d.folders.map(f => f.name);
 let m = must('materials', P, {});
 ok(names(m).includes('Week 1') && !names(m).includes('Week 4') && names(m).includes('Track - Web Development') && !names(m).includes('Track - AI & Machine Learning') && names(m).includes('General'), 'student materials filtered: ' + names(m));
 m = must('materials', T, { refresh: true });
-ok(m.folders.length === 10, 'admin sees all folders: ' + m.folders.length);
+ok(m.folders.length === 11, 'admin sees all folders: ' + m.folders.length);
 
 // --- syllabus export / import round trip
 const json = must('exportSyllabus', T);
 const obj = JSON.parse(json);
-ok(obj.days.length === 45 && obj.assignments.length === 45, 'export complete');
+ok(obj.days.length === 53 && obj.assignments.length === 53, 'export complete');
 obj.days[0].title = 'Setup, Tools & First Program';
 r = must('importSyllabus', T, { json: JSON.stringify(obj) });
-ok(/Imported 45 days, 4 weeks, 4 tracks, 45 assignments/.test(r.msg), r.msg);
+ok(/Imported 53 days, 4 weeks, 5 tracks, 53 assignments/.test(r.msg), r.msg);
 st = must('bootstrap', P);
 ok(st.days[0].title === 'Setup, Tools & First Program' && st.progress.length === 3, 'import keeps progress & applies edits');
 ok(/not valid JSON/.test(err('importSyllabus', T, { json: '{bad' })), 'bad JSON message');
@@ -199,7 +199,7 @@ const newA = r.state.assignments.find(a => a.title === 'Bonus task');
 ok(newA && newA.track === 'common' && newA.due === '2026-12-18T18:00', 'assignment created');
 must('deleteAssignment', T, { id: newA.id });
 must('deleteDay', T, { id: 'd22' });
-ok(must('bootstrap', T).days.length === 45, 'day deleted');
+ok(must('bootstrap', T).days.length === 53, 'day deleted');
 
 // --- leaderboard, bonus, password, logout
 must('awardBonus', T, { userId: aid, points: 50, reason: 'Helped classmates' });

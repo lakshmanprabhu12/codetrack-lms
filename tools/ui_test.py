@@ -111,7 +111,7 @@ with sync_playwright() as pw:
     p.click("[data-act=sylTab][data-tab=assign]"); p.wait_for_timeout(300); shot(p, "a8_assignments")
     p.click("[data-act=sylTab][data-tab=json]"); p.click("[data-act=jsonLoad]"); p.wait_for_timeout(700); shot(p, "a9_json")
     p.click("[data-act=jsonImport]"); p.wait_for_timeout(300); p.click("[data-act=confirmYes]"); p.wait_for_timeout(900)
-    assert "Imported 45 days" in p.inner_text("#snackbar"), "json import works from UI"
+    assert "Imported 53 days" in p.inner_text("#snackbar"), "json import works from UI"
     # publish week 2 via switch
     p.click("[data-act=sylTab][data-tab=weeks]"); p.wait_for_timeout(300)
     p.locator("label.switch:has(input[data-week='2'])").click(); p.wait_for_timeout(900); assert p.locator("input[data-change=publishWeek][data-week='2']").is_checked(), 'week 2 published'
