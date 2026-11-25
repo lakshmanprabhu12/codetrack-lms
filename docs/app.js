@@ -1267,7 +1267,7 @@ V.exams = () => {
     <div class="row"><button class="btn outlined" data-act="xmJson">${icon('data_object')} New / import exam</button></div></div>
   ${ex.length ? `<div class="list card" style="padding:6px 10px;margin-bottom:16px">${ex.map(e => `<div class="list-item">
       <span class="lead-icon ${e.active ? 'green' : ''}">${icon('quiz')}</span>
-      <div class="grow"><div class="title">${esc(e.title)}</div><div class="meta">${totalOf(e.id)} marks · ${e.durationMin} min · ${e.sections.map(s => s.id).join(' · ')} · ${plural(att.filter(a => a.examId === e.id).length, 'attempt')}</div></div>
+      <div class="grow"><div class="title">${esc(e.title)}</div><div class="meta">${totalOf(e.id)} marks · ${e.durationMin} min${e.opensAt ? ' · opens ' + fmtDT(e.opensAt) : ''} · ${e.sections.map(s => s.id).join(' · ')} · ${plural(att.filter(a => a.examId === e.id).length, 'attempt')}</div></div>
       <label class="switch"><input type="checkbox" data-change="xmActive" data-id="${esc(e.id)}" ${e.active ? 'checked' : ''}><span class="track"></span><span class="small">${e.active ? 'Open' : 'Hidden'}</span></label>
       <button class="icon-btn sm" data-act="xmJson" data-id="${esc(e.id)}" title="Edit JSON">${icon('edit')}</button></div>`).join('')}</div>`
     : emptyState('quiz', 'No exams yet. Use "New / import exam" and paste the exam JSON.')}

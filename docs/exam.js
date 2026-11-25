@@ -21,6 +21,8 @@ function fmtLeft(ms) {
 }
 function durNum(e) { return e.durationMin >= 60 ? Math.round(e.durationMin / 6) / 10 : e.durationMin; }
 function durUnit(e) { return e.durationMin >= 60 ? 'hour' : 'minute'; }
+function notYet(e) { return !!(e.opensAt && !e.attempt && (S.data.serverNow || '').slice(0, 16) < e.opensAt); }
+function opensText(e) { return 'Opens at ' + fmtTime(e.opensAt.slice(11, 16)) + (e.opensAt.slice(0, 10) !== S.data.today ? ', ' + A.fmtDate(e.opensAt.slice(0, 10)) : ''); }
 function qCount(e) { return e.sections.reduce((t, s) => t + s.questions.length, 0); }
 function draftKey() { return 'ct_exam_v1_' + S.data.user.id + '_' + S.xm.examId; }
 function saveDraft() { if (S.xm) store(draftKey(), JSON.stringify({ answers: S.xm.answers, integ: S.xm.integ })); }
@@ -32,7 +34,8 @@ function examCards(compact) {
   return list.map(e => {
     const at = e.attempt;
     const st = !at ? 'new' : at.status === 'submitted' ? 'done' : 'progress';
-    const btn = st === 'done' ? `<span class="pill green">${icon('task_alt')} Submitted ${at.submittedAt ? fmtDT(at.submittedAt) : ''}</span>`
+    const btn = st === 'new' && notYet(e) ? `<span class="xm-soon">${icon('schedule')} ${esc(opensText(e))}</span><button class="btn filled ${compact ? 'sm' : ''}" data-act="xmOpen" data-id="${esc(e.id)}">${icon('menu_book')} Read the rules</button>`
+      : st === 'done' ? `<span class="pill green">${icon('task_alt')} Submitted ${at.submittedAt ? fmtDT(at.submittedAt) : ''}</span>`
       : `<button class="btn filled ${compact ? 'sm' : ''}" data-act="xmOpen" data-id="${esc(e.id)}">${icon(st === 'new' ? 'edit_document' : 'play_arrow')} ${st === 'new' ? 'Take exam' : 'Resume exam'}</button>`;
     return `<div class="xm-card">
       <span class="xm-ic">${icon('assignment')}</span>
@@ -116,7 +119,8 @@ function renderRules(e) {
     ${PROCTOR() ? `<div class="xm-notice cam">${icon('photo_camera')}<div><b>Camera &amp; microphone monitoring.</b> Your webcam and microphone stay on for the whole exam. The system flags moments when your face is not visible, another person appears, you look away from the screen for long, or you talk. Each flagged moment is saved as a photo for your instructor. Keep your face in view and the room quiet. When you press Take exam your browser will ask to use the camera and microphone — choose <b>Allow</b>.</div></div>` : ''}
     <div class="xm-notice soft">${icon('timer')}<div>The <b>${durNum(e)}-${durUnit(e)} timer</b> starts when you press Take exam and keeps running even if you close the page. When it reaches zero your answers are submitted automatically.</div></div>
     <label class="xm-agree"><input type="checkbox" data-change="xmAgree" ${S.xm.agreed ? 'checked' : ''}> I have read the rules and I will follow them${PROCTOR() ? ', and I allow camera and microphone monitoring' : ''}.</label>
-    <div class="row end" style="margin-top:18px"><button class="btn filled xm-go" data-act="xmStart" ${S.xm.agreed ? '' : 'disabled'}>${icon(resume ? 'play_arrow' : 'edit_document')} ${resume ? 'Resume exam' : 'Take exam'}</button></div>
+    <div class="row end" style="margin-top:18px">${notYet(e) ? `<span class="muted" style="margin-right:auto">The exam unlocks at ${esc(fmtTime(e.opensAt.slice(11, 16)))}. Press Refresh then.</span><button class="btn outlined" data-act="xmRefresh">${icon('refresh')} Refresh</button><button class="btn filled xm-go" disabled>${icon('schedule')} ${esc(opensText(e))}</button>`
+      : `<button class="btn filled xm-go" data-act="xmStart" ${S.xm.agreed ? '' : 'disabled'}>${icon(resume ? 'play_arrow' : 'edit_document')} ${resume ? 'Resume exam' : 'Take exam'}</button>`}</div>
   </div></div>`;
 }
 
@@ -349,6 +353,7 @@ Object.assign(A.ACTIONS, {
   xmOpen: el => open(el.dataset.id),
   xmClose: close,
   xmStart: start,
+  xmRefresh: async () => { try { S.data = await call('bootstrap'); render(); } catch (x) { toast(x.message, true); } },
   xmSubmit: () => submitSection(false),
   xmResume: () => { hideOverlay(); try { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); } catch (x) { /* ignore */ } }
 });

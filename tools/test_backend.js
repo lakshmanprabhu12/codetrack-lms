@@ -355,8 +355,18 @@ else {
   const ga2 = must('getExamAttempt', T, { id: aid2 });
   ok(ga2.attempt.camera.length === 2 && /thumbnail\?id=/.test(ga2.attempt.camera[0].thumb) && ga2.attempt.camera[1].thumb === '', 'camera flags listed, only real JPEGs saved: ' + JSON.stringify(ga2.attempt.camera.map(c => c.type)));
   ok(rows_('ProctorFlags').length === 2, 'ProctorFlags sheet rows');
+  // scheduled opening
+  const sched = JSON.parse(JSON.stringify(paper)); sched.id = 'sched-1'; sched.opensAt = '2026-11-27T09:00';
+  must('saveExam', T, { json: sched });
+  __setNow('2026-11-27T03:20:00Z');            // 08:50 IST on the 27th
+  const Z = must('login', null, { username: 'priya.sharma', password: 'newpass' }).token;
+  const se2 = must('bootstrap', Z).exams.find(x => x.id === 'sched-1');
+  ok(se2 && se2.opensAt === '2026-11-27T09:00', 'opensAt sent to students');
+  ok(/opens at 09:00/.test(err('startExam', Z, { examId: 'sched-1' })), 'cannot start before opensAt');
+  __setNow('2026-11-27T03:31:00Z');            // 09:01
+  ok(/started/.test(must('startExam', Z, { examId: 'sched-1' }).msg), 'starts after opensAt');
   must('saveExam', T, { id: e.id, active: false });
-  ok(must('bootstrap', Y).exams.length === 0, 'inactive exam hidden');
+  ok(!must('bootstrap', Y).exams.some(x => x.id === e.id), 'inactive exam hidden');
 }
 // --- HTTP layer (what GitHub Pages calls)
 const health = JSON.parse(doGet().getContent());

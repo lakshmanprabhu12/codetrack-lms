@@ -48,7 +48,7 @@ const SCHEMA = {
   Doubts: ['id', 'userId', 'dayId', 'question', 'answer', 'shared', 'status', 'askedAt', 'answeredAt'],
   Reflections: ['id', 'userId', 'date', 'dayId', 'learned', 'stuck', 'confidence', 'createdAt', 'updatedAt'],
   Points: ['id', 'userId', 'key', 'points', 'reason', 'createdAt'],
-  Exams: ['id', 'title', 'description', 'durationMin', 'sections', 'active', 'createdAt', 'updatedAt', 'maxExits'],
+  Exams: ['id', 'title', 'description', 'durationMin', 'sections', 'active', 'createdAt', 'updatedAt', 'maxExits', 'opensAt'],
   ProctorFlags: ['id', 'attemptId', 'examId', 'userId', 'type', 'label', 'section', 'at', 'fileId', 'fileUrl'],
   ExamAttempts: ['id', 'examId', 'userId', 'startedAt', 'section', 'answers', 'testResults', 'sectionLog', 'submittedAt', 'status', 'autoScore', 'marks', 'total', 'integrity', 'comment']
 };
@@ -870,7 +870,7 @@ const EXAM = { GRACE_MIN: 3, TYPES: ['mcq', 'text', 'code'] };
 function examObj_(e) {
   return {
     id: e.id, title: e.title, description: e.description, durationMin: num_(e.durationMin) || 120,
-    maxExits: e.maxExits === '' || e.maxExits === undefined ? 5 : num_(e.maxExits), active: bool_(e.active), sections: parseJson_(e.sections, []), createdAt: e.createdAt, updatedAt: e.updatedAt
+    maxExits: e.maxExits === '' || e.maxExits === undefined ? 5 : num_(e.maxExits), active: bool_(e.active), opensAt: e.opensAt || '', sections: parseJson_(e.sections, []), createdAt: e.createdAt, updatedAt: e.updatedAt
   };
 }
 function examQuestions_(ex) {
@@ -895,7 +895,7 @@ function studentExams_(u) {
     const ex = examObj_(e);
     const at = myAttempt_(u, ex.id);
     return {
-      id: ex.id, title: ex.title, description: ex.description, durationMin: ex.durationMin, maxExits: ex.maxExits, total: examTotal_(ex),
+      id: ex.id, title: ex.title, description: ex.description, durationMin: ex.durationMin, maxExits: ex.maxExits, total: examTotal_(ex), opensAt: ex.opensAt,
       sections: ex.sections.map(function (s) {
         return {
           id: s.id, title: s.title, instructions: s.instructions, pick: s.pick || 0,
@@ -933,6 +933,7 @@ function startExam_(u, p) {
   const e = byId_('Exams', p.examId);
   if (!e || !bool_(e.active)) throw new Error('This exam is not available.');
   if (myAttempt_(u, e.id)) return '';
+  if (e.opensAt && now_().slice(0, 16) < String(e.opensAt).slice(0, 16)) throw new Error('This exam opens at ' + String(e.opensAt).slice(11, 16) + '.');
   insert_('ExamAttempts', {
     id: uid_('x'), examId: e.id, userId: u.id, startedAt: now_(), section: 0, answers: '{}', testResults: '{}',
     sectionLog: '{}', submittedAt: '', status: 'in_progress', autoScore: 0, marks: '{}', total: '', integrity: '', comment: ''
@@ -1128,7 +1129,8 @@ function saveExam_(_, p) {
   const obj = {
     title: title, description: clean_(d.description, 2000), durationMin: Math.max(5, Math.min(600, Math.round(num_(d.durationMin) || 120))),
     sections: JSON.stringify(sections), active: d.active === false || d.active === 'false' ? 'FALSE' : 'TRUE', updatedAt: now_(),
-    maxExits: d.maxExits === undefined || d.maxExits === '' ? 5 : Math.max(0, Math.min(50, Math.round(num_(d.maxExits))))
+    maxExits: d.maxExits === undefined || d.maxExits === '' ? 5 : Math.max(0, Math.min(50, Math.round(num_(d.maxExits)))),
+    opensAt: normDateTime_(d.opensAt || '')
   };
   const id = clean_(d.id, 40);
   const row = id ? byId_('Exams', id) : null;

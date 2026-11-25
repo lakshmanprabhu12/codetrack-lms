@@ -598,3 +598,4 @@ textarea.code-input:focus{border:2px solid var(--primary);padding:13px 15px}
 .cam-item:hover{text-decoration:none;box-shadow:var(--shadow-1)}
 .cam-item img,.cam-noimg{width:100%;aspect-ratio:4/3;object-fit:cover;background:#ddd;display:flex;align-items:center;justify-content:center;transform:scaleX(-1)}
 .cam-item>span:last-child{padding:6px 8px}
+.xm-soon{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.18);border-radius:999px;padding:6px 12px;font-weight:500}
