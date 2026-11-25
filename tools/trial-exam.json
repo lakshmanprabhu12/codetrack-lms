@@ -1,0 +1,445 @@
+{
+ "id": "trial-1",
+ "title": "Trial: Digital Exam Experience",
+ "durationMin": 120,
+ "maxExits": 5,
+ "active": true,
+ "description": "A practice run so you know how the real exam works. Questions are placeholders, except one real coding question in Section D.",
+ "sections": [
+  {
+   "id": "A",
+   "title": "Multiple choice",
+   "instructions": "Choose one answer for each question. 1 mark each.",
+   "questions": [
+    {
+     "id": "A1",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A2",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A3",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A4",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A5",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A6",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A7",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A8",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A9",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A10",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A11",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A12",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A13",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A14",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A15",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A16",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A17",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A18",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A19",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    },
+    {
+     "id": "A20",
+     "type": "mcq",
+     "text": "Your question will appear here",
+     "options": [
+      "Option A",
+      "Option B",
+      "Option C",
+      "Option D"
+     ],
+     "answer": 0,
+     "marks": 1
+    }
+   ]
+  },
+  {
+   "id": "B",
+   "title": "Short theory",
+   "pick": 6,
+   "instructions": "Answer any 6 of the 8 questions. 3 marks each.",
+   "questions": [
+    {
+     "id": "B1",
+     "type": "text",
+     "text": "Your question will appear here",
+     "marks": 3
+    },
+    {
+     "id": "B2",
+     "type": "text",
+     "text": "Your question will appear here",
+     "marks": 3
+    },
+    {
+     "id": "B3",
+     "type": "text",
+     "text": "Your question will appear here",
+     "marks": 3
+    },
+    {
+     "id": "B4",
+     "type": "text",
+     "text": "Your question will appear here",
+     "marks": 3
+    },
+    {
+     "id": "B5",
+     "type": "text",
+     "text": "Your question will appear here",
+     "marks": 3
+    },
+    {
+     "id": "B6",
+     "type": "text",
+     "text": "Your question will appear here",
+     "marks": 3
+    },
+    {
+     "id": "B7",
+     "type": "text",
+     "text": "Your question will appear here",
+     "marks": 3
+    },
+    {
+     "id": "B8",
+     "type": "text",
+     "text": "Your question will appear here",
+     "marks": 3
+    }
+   ]
+  },
+  {
+   "id": "C",
+   "title": "Predict the output & find the errors",
+   "instructions": "Write the exact output, or the corrected code. 2 marks each.",
+   "questions": [
+    {
+     "id": "C1",
+     "type": "text",
+     "text": "Your question will appear here",
+     "code": "# The code for this question will appear here",
+     "marks": 2,
+     "mono": true
+    },
+    {
+     "id": "C2",
+     "type": "text",
+     "text": "Your question will appear here",
+     "code": "# The code for this question will appear here",
+     "marks": 2,
+     "mono": true
+    },
+    {
+     "id": "C3",
+     "type": "text",
+     "text": "Your question will appear here",
+     "code": "# The code for this question will appear here",
+     "marks": 2,
+     "mono": true
+    },
+    {
+     "id": "C4",
+     "type": "text",
+     "text": "Your question will appear here",
+     "code": "# The code for this question will appear here",
+     "marks": 2,
+     "mono": true
+    },
+    {
+     "id": "C5",
+     "type": "text",
+     "text": "Your question will appear here",
+     "code": "# The code for this question will appear here",
+     "marks": 2,
+     "mono": true
+    },
+    {
+     "id": "C6",
+     "type": "text",
+     "text": "Your question will appear here",
+     "code": "# The code for this question will appear here",
+     "marks": 2,
+     "mono": true
+    }
+   ]
+  },
+  {
+   "id": "D",
+   "title": "Coding",
+   "instructions": "Type each program in its editor and press Run. When your program asks for input, type in the Terminal and press Enter. Use Check to run the hidden tests.",
+   "questions": [
+    {
+     "id": "D1",
+     "type": "code",
+     "title": "Type Detective (is_student)",
+     "marks": 8,
+     "text": "Ask the user for 4 values and convert each one to the right type:\n• **age** → int\n• **height** in cm → float\n• **name** → str\n• **is_student** → bool: True when the answer to \"Are you a student? (yes/no)\" is yes (any capitals or spaces), otherwise False\n\nPrint each value together with its type, e.g. `age : 21 <class 'int'>`.\nHint: `bool(\"no\")` is True, so don't use bool() here.",
+     "tests": [
+      {
+       "input": "21\n172.5\nPriya\nYes",
+       "expect": "<class 'int'>\n<class 'float'>\n<class 'str'>\ntrue <class 'bool'>"
+      },
+      {
+       "input": "19\n160\nArun\n no ",
+       "expect": "false <class 'bool'>"
+      }
+     ],
+     "key": "is_student = answer.strip().lower() == \"yes\""
+    },
+    {
+     "id": "D2",
+     "type": "code",
+     "title": "Coding question 2",
+     "text": "Your question will appear here",
+     "marks": 8,
+     "tests": []
+    },
+    {
+     "id": "D3",
+     "type": "code",
+     "title": "Coding question 3",
+     "text": "Your question will appear here",
+     "marks": 8,
+     "tests": []
+    },
+    {
+     "id": "D4",
+     "type": "code",
+     "title": "Coding question 4",
+     "text": "Your question will appear here",
+     "marks": 13,
+     "tests": []
+    },
+    {
+     "id": "D5",
+     "type": "code",
+     "title": "Coding question 5",
+     "text": "Your question will appear here",
+     "marks": 13,
+     "tests": []
+    }
+   ]
+  }
+ ]
+}

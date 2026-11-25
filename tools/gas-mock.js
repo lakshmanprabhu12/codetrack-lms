@@ -57,6 +57,9 @@
       const hex = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
       return hex.slice(0, 8) + '-' + hex.slice(8, 12) + '-' + hex.slice(12, 16) + '-' + hex.slice(16, 20) + '-' + hex.slice(20);
     },
+    base64Decode: b64 => { const bin = (typeof atob === 'function' ? atob(b64) : Buffer.from(b64, 'base64').toString('binary')); const out = []; for (let i = 0; i < bin.length; i++) { const c = bin.charCodeAt(i); out.push(c > 127 ? c - 256 : c); } return out; },
+    base64Encode: bytes => { let bin = ''; (bytes || []).forEach(b => { bin += String.fromCharCode(b & 255); }); return typeof btoa === 'function' ? btoa(bin) : Buffer.from(bin, 'binary').toString('base64'); },
+    newBlob: (bytes, mime, name) => ({ _blob: true, getBytes: () => bytes, getContentType: () => mime, getName: () => name }),
     formatDate: (date, tz, fmt) => {
       const parts = {};
       new Intl.DateTimeFormat('en-GB', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
@@ -156,7 +159,7 @@
     this.getFolders = () => iter(kids().filter(x => x.kind === 'folder'));
     this.getFoldersByName = n => iter(kids().filter(x => x.kind === 'folder' && x.getName() === n));
     this.getFiles = () => iter(kids().filter(x => x.kind === 'file'));
-    this.createFile = (n, content, mime) => new File(n, content, mime, this);
+    this.createFile = (n, content, mime) => (n && n._blob ? new File(n.getName(), n.getBytes(), n.getContentType(), this) : new File(n, content, mime, this));
     this.setSharing = (a, p) => { this._sharing = a + ':' + p; };
     items[id] = this;
   }

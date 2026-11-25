@@ -40,14 +40,17 @@ const SCHEMA = {
   Tracks: ['id', 'name', 'description', 'icon', 'order'],
   Weeks: ['week', 'title', 'published'],
   Days: ['id', 'day', 'week', 'date', 'track', 'title', 'scrum', 'paper', 'code', 'outcomes'],
-  Assignments: ['id', 'dayId', 'track', 'title', 'description', 'due', 'active', 'createdAt'],
-  Submissions: ['id', 'assignmentId', 'userId', 'type', 'fileName', 'fileId', 'fileUrl', 'code', 'submittedAt', 'late', 'status', 'comment', 'reviewedAt'],
+  Assignments: ['id', 'dayId', 'track', 'title', 'description', 'due', 'active', 'createdAt', 'mode', 'tests', 'examStart', 'examEnd', 'maxSwitches'],
+  Submissions: ['id', 'assignmentId', 'userId', 'type', 'fileName', 'fileId', 'fileUrl', 'code', 'submittedAt', 'late', 'status', 'comment', 'reviewedAt', 'integrity', 'testScore', 'testResults'],
   Progress: ['userId', 'dayId', 'item', 'doneAt'],
   Attendance: ['id', 'date', 'userId', 'status', 'checkInAt', 'verifiedAt'],
   Announcements: ['id', 'title', 'body', 'pinned', 'createdAt'],
   Doubts: ['id', 'userId', 'dayId', 'question', 'answer', 'shared', 'status', 'askedAt', 'answeredAt'],
   Reflections: ['id', 'userId', 'date', 'dayId', 'learned', 'stuck', 'confidence', 'createdAt', 'updatedAt'],
-  Points: ['id', 'userId', 'key', 'points', 'reason', 'createdAt']
+  Points: ['id', 'userId', 'key', 'points', 'reason', 'createdAt'],
+  Exams: ['id', 'title', 'description', 'durationMin', 'sections', 'active', 'createdAt', 'updatedAt', 'maxExits'],
+  ProctorFlags: ['id', 'attemptId', 'examId', 'userId', 'type', 'label', 'section', 'at', 'fileId', 'fileUrl'],
+  ExamAttempts: ['id', 'examId', 'userId', 'startedAt', 'section', 'answers', 'testResults', 'sectionLog', 'submittedAt', 'status', 'autoScore', 'marks', 'total', 'integrity', 'comment']
 };
 
 const DEFAULT_SETTINGS = {
@@ -159,7 +162,16 @@ const ROUTES = {
   deleteAnnouncement: { fn: deleteAnnouncement_, write: true, admin: true },
   answerDoubt: { fn: answerDoubt_, write: true, admin: true },
   deleteDoubt: { fn: deleteDoubt_, write: true, admin: true },
-  saveSettings: { fn: saveSettings_, write: true, admin: true }
+  saveSettings: { fn: saveSettings_, write: true, admin: true },
+  // exams
+  startExam: { fn: startExam_, write: true, student: true },
+  submitExamSection: { fn: submitExamSection_, write: true, student: true },
+  getExamAttempt: { fn: getExamAttempt_, admin: true },
+  gradeExamAttempt: { fn: gradeExamAttempt_, write: true, admin: true },
+  resetExamAttempt: { fn: resetExamAttempt_, write: true, admin: true },
+  saveExam: { fn: saveExam_, write: true, admin: true },
+  proctorFlag: { fn: proctorFlag_, write: true, student: true, noState: true },
+  exportExam: { fn: function (u, p) { const e = byId_('Exams', p.id); if (!e) throw new Error('Exam not found.'); return JSON.stringify(examObj_(e), null, 1); }, admin: true }
 };
 
 /* =====================================================================
@@ -287,7 +299,8 @@ function ss_() {
 }
 
 function sh_(name) {
-  const s = ss_().getSheetByName(name);
+  let s = ss_().getSheetByName(name);
+  if (!s && SCHEMA[name]) s = ensureSheet_(ss_(), name, SCHEMA[name]);   // tables added in later versions
   if (!s) throw new Error('Missing sheet "' + name + '". Run setup() again.');
   return s;
 }
@@ -297,7 +310,16 @@ function headers_(name) {
   if (MEM[key]) return MEM[key];
   const s = sh_(name);
   const lastCol = s.getLastColumn();
-  MEM[key] = lastCol ? s.getRange(1, 1, 1, lastCol).getValues()[0].map(String) : SCHEMA[name].slice();
+  let hs = lastCol ? s.getRange(1, 1, 1, lastCol).getValues()[0].map(String) : SCHEMA[name].slice();
+  while (hs.length && !hs[hs.length - 1]) hs.pop();
+  // Columns added in newer versions are appended to the sheet automatically (no need to re-run setup).
+  const missing = lastCol ? (SCHEMA[name] || []).filter(function (h) { return hs.indexOf(h) < 0; }) : [];
+  if (missing.length) {
+    s.getRange(1, hs.length + 1, 1, missing.length).setValues([missing]).setFontWeight('bold');
+    s.getRange(1, hs.length + 1, s.getMaxRows(), missing.length).setNumberFormat('@');
+    hs = hs.concat(missing);
+  }
+  MEM[key] = hs;
   return MEM[key];
 }
 
@@ -664,7 +686,7 @@ function stateFor_(u) { return u.role === 'admin' ? adminState_(u) : studentStat
 function baseState_() {
   const s = settings_();
   return {
-    today: today_(), now: hhmm_(),
+    today: today_(), now: hhmm_(), serverNow: now_(),
     settings: {
       courseTitle: s.courseTitle, checkinStart: s.checkinStart, checkinEnd: s.checkinEnd,
       lateAfter: s.lateAfter, trackSelectionOpen: bool_(s.trackSelectionOpen)
@@ -686,7 +708,7 @@ function studentState_(u) {
   days.forEach(function (d) { dayIds[d.id] = true; });
 
   const subs = rows_('Submissions').filter(function (s) { return s.userId === u.id; })
-    .map(function (s) { const c = strip_(s); delete c.code; delete c.fileUrl; delete c.fileId; return c; })
+    .map(function (s) { const c = strip_(s); delete c.code; delete c.fileUrl; delete c.fileId; return studentSubView_(c); })
     .sort(function (a, b) { return String(b.submittedAt).localeCompare(a.submittedAt); });
 
   const att = rows_('Attendance').filter(function (a) { return a.userId === u.id; }).map(strip_)
@@ -718,7 +740,7 @@ function studentState_(u) {
     days: days,
     lockedTrackContent: !t && rows_('Days').some(function (d) { return pub[String(num_(d.week))] && d.track !== 'common'; }),
     progress: rows_('Progress').filter(function (p) { return p.userId === u.id; }).map(function (p) { return p.dayId + '|' + p.item; }),
-    assignments: visibleAssignments_(u, dayIds).map(strip_).sort(function (a, b) { return String(a.due).localeCompare(b.due); }),
+    assignments: visibleAssignments_(u, dayIds).map(studentAssignment_).sort(function (a, b) { return String(a.due).localeCompare(b.due); }),
     submissions: subs,
     attendance: att,
     todayAttendance: todayAtt,
@@ -730,7 +752,8 @@ function studentState_(u) {
     pointsLog: rows_('Points').filter(function (p) { return p.userId === u.id; }).map(strip_)
       .sort(function (a, b) { return String(b.createdAt).localeCompare(a.createdAt); }),
     stats: statsFor_(u),
-    leaderboard: lb
+    leaderboard: lb,
+    exams: studentExams_(u)
   });
 }
 
@@ -758,6 +781,9 @@ function adminState_(u) {
     const c = strip_(s);
     c.preview = String(s.code || '').slice(0, 160);
     delete c.code;
+    const integ = parseJson_(s.integrity, null);
+    c.flags = integ && integ.flags ? integ.flags : [];
+    delete c.integrity; delete c.testResults;
     c.studentName = nameOf[s.userId] || '(removed)';
     c.assignmentTitle = titleOf[s.assignmentId] || '(deleted assignment)';
     return c;
@@ -782,6 +808,9 @@ function adminState_(u) {
     doubts: rows_('Doubts').map(withName).sort(function (a, b) { return String(b.askedAt).localeCompare(a.askedAt); }),
     reflections: rows_('Reflections').map(withName).sort(function (a, b) { return String(b.date).localeCompare(a.date) || String(a.studentName).localeCompare(b.studentName); }),
     classDates: classDates_(),
+    exams: rows_('Exams').map(examObj_),
+    examAttempts: rows_('ExamAttempts').map(function (x) { return attemptSummary_(x, nameOf); })
+      .sort(function (a, b) { return String(b.startedAt).localeCompare(a.startedAt); }),
     counts: {
       pendingCheckins: attendance.filter(function (a) { return a.date === today && a.status === 'pending'; }).length,
       toReview: subs.filter(function (s) { return s.status === 'submitted'; }).length,
@@ -831,6 +860,439 @@ function checkIn_(u) {
   return 'Checked in at ' + t + '. Your instructor will verify it.';
 }
 
+
+/* =====================================================================
+ * Sectioned exams (MCQ, written answers, coding) taken one section at a time
+ * ===================================================================*/
+
+const EXAM = { GRACE_MIN: 3, TYPES: ['mcq', 'text', 'code'] };
+
+function examObj_(e) {
+  return {
+    id: e.id, title: e.title, description: e.description, durationMin: num_(e.durationMin) || 120,
+    maxExits: e.maxExits === '' || e.maxExits === undefined ? 5 : num_(e.maxExits), active: bool_(e.active), sections: parseJson_(e.sections, []), createdAt: e.createdAt, updatedAt: e.updatedAt
+  };
+}
+function examQuestions_(ex) {
+  const out = [];
+  ex.sections.forEach(function (s) { (s.questions || []).forEach(function (q) { q._section = s.id; out.push(q); }); });
+  return out;
+}
+function examTotal_(ex) {
+  return ex.sections.reduce(function (t, s) {
+    const ms = (s.questions || []).map(function (q) { return num_(q.marks); }).sort(function (a, b) { return b - a; });
+    return t + (s.pick ? ms.slice(0, s.pick) : ms).reduce(function (a, b) { return a + b; }, 0);
+  }, 0);
+}
+function myAttempt_(u, examId) {
+  return rows_('ExamAttempts').find(function (x) { return x.userId === u.id && x.examId === examId; });
+}
+function examDeadline_(ex, at) { return addMin_(String(at.startedAt).slice(0, 16), ex.durationMin); }
+
+/* What a student may see: no answers, keys or expected outputs. */
+function studentExams_(u) {
+  return rows_('Exams').filter(function (e) { return bool_(e.active); }).map(function (e) {
+    const ex = examObj_(e);
+    const at = myAttempt_(u, ex.id);
+    return {
+      id: ex.id, title: ex.title, description: ex.description, durationMin: ex.durationMin, maxExits: ex.maxExits, total: examTotal_(ex),
+      sections: ex.sections.map(function (s) {
+        return {
+          id: s.id, title: s.title, instructions: s.instructions, pick: s.pick || 0,
+          marks: (s.questions || []).reduce(function (t, q) { return t + num_(q.marks); }, 0),
+          questions: (s.questions || []).map(function (q) {
+            const c = { id: q.id, type: q.type, text: q.text, marks: num_(q.marks) };
+            if (q.title) c.title = q.title;
+            if (q.code) c.code = q.code;
+            if (q.mono) c.mono = true;
+            if (q.type === 'mcq') c.options = q.options;
+            if (q.type === 'code') { c.starter = q.starter || ''; c.tests = (q.tests || []).map(function (t) { return { input: t.input, hidden: true }; }); }
+            return c;
+          })
+        };
+      }),
+      attempt: at ? {
+        id: at.id, status: at.status, section: num_(at.section), startedAt: at.startedAt, submittedAt: at.submittedAt,
+        deadline: examDeadline_(ex, at), sectionLog: parseJson_(at.sectionLog, {})
+      } : null
+    };
+  });
+}
+
+function attemptSummary_(x, nameOf) {
+  const integ = parseJson_(x.integrity, null);
+  const marks = parseJson_(x.marks, {});
+  return {
+    id: x.id, examId: x.examId, userId: x.userId, studentName: nameOf[x.userId] || '(removed)', status: x.status,
+    section: num_(x.section), startedAt: x.startedAt, submittedAt: x.submittedAt, autoScore: num_(x.autoScore),
+    total: x.total === '' ? null : num_(x.total), graded: Object.keys(marks).length > 0, flags: integ && integ.flags ? integ.flags : []
+  };
+}
+
+function startExam_(u, p) {
+  const e = byId_('Exams', p.examId);
+  if (!e || !bool_(e.active)) throw new Error('This exam is not available.');
+  if (myAttempt_(u, e.id)) return '';
+  insert_('ExamAttempts', {
+    id: uid_('x'), examId: e.id, userId: u.id, startedAt: now_(), section: 0, answers: '{}', testResults: '{}',
+    sectionLog: '{}', submittedAt: '', status: 'in_progress', autoScore: 0, marks: '{}', total: '', integrity: '', comment: ''
+  });
+  return 'Exam started. All the best!';
+}
+
+function gradeAllLines_(tests, outputs) {
+  outputs = Array.isArray(outputs) ? outputs : [];
+  let passed = 0;
+  const results = tests.map(function (t, i) {
+    const raw = String(outputs[i] === undefined || outputs[i] === null ? '' : outputs[i]).slice(0, 4000);
+    const got = normOut_(raw);
+    const want = normOut_(t.expect).split('\n').filter(String);
+    const ok = want.length > 0 && want.every(function (w) { return got.indexOf(w) >= 0; });
+    if (ok) passed++;
+    return { ok: ok, output: raw.slice(0, 800) };
+  });
+  return { score: passed + '/' + tests.length, results: results };
+}
+
+function submitExamSection_(u, p) {
+  const e = byId_('Exams', p.examId);
+  if (!e) throw new Error('This exam is not available.');
+  const ex = examObj_(e);
+  const at = myAttempt_(u, ex.id);
+  if (!at) throw new Error('Start the exam first.');
+  if (at.status === 'submitted') throw new Error('You have already submitted this exam.');
+  const idx = num_(at.section);
+  const sec = ex.sections[idx];
+  if (!sec || sec.id !== p.sectionId) throw new Error('This section is already submitted. Refresh the page.');
+
+  const nowS = now_();
+  const late = nowS.slice(0, 16) > addMin_(examDeadline_(ex, at), EXAM.GRACE_MIN);
+  const answers = parseJson_(at.answers, {});
+  const results = parseJson_(at.testResults, {});
+  const given = p.answers && typeof p.answers === 'object' ? p.answers : {};
+  const outs = p.testOutputs && typeof p.testOutputs === 'object' ? p.testOutputs : {};
+  (sec.questions || []).forEach(function (q) {
+    const v = given[q.id];
+    if (q.type === 'mcq') {
+      const n = v === '' || v === null || v === undefined ? null : Math.round(num_(v));
+      answers[q.id] = n !== null && n >= 0 && n < (q.options || []).length ? n : null;
+    } else {
+      answers[q.id] = String(v === undefined || v === null ? '' : v).slice(0, q.type === 'code' ? 4000 : 1500);
+    }
+    if (q.type === 'code' && (q.tests || []).length && String(answers[q.id]).trim()) results[q.id] = gradeAllLines_(q.tests, outs[q.id]);
+  });
+  let auto = 0;
+  examQuestions_(ex).forEach(function (q) { if (q.type === 'mcq' && answers[q.id] !== null && answers[q.id] === q.answer) auto += num_(q.marks); });
+
+  const log = parseJson_(at.sectionLog, {});
+  log[sec.id] = nowS;
+  const integ = cleanIntegrity_(p.integrity, 0);
+  if (late) integ.flags.push('Submitted after the time limit');
+  const prev = parseJson_(at.integrity, null);
+  if (prev && prev.flags && prev.flags.indexOf('Submitted after the time limit') >= 0 && integ.flags.indexOf('Submitted after the time limit') < 0) integ.flags.push('Submitted after the time limit');
+
+  const last = idx >= ex.sections.length - 1 || p.final === true || late;
+  const patch = {
+    answers: JSON.stringify(answers), testResults: JSON.stringify(results), sectionLog: JSON.stringify(log),
+    integrity: JSON.stringify(integ), autoScore: auto, section: last ? ex.sections.length : idx + 1
+  };
+  if (last) { patch.status = 'submitted'; patch.submittedAt = nowS; }
+  update_('ExamAttempts', at, patch);
+  if (last) {
+    award_(u.id, 'exam:' + ex.id, POINTS.SUBMIT_ON_TIME, 'Completed exam: ' + ex.title);
+    return 'Exam submitted. Well done!';
+  }
+  return 'Section ' + sec.id + ' submitted.';
+}
+
+/* Camera/microphone flag from the exam page: snapshot goes to Drive, a row to ProctorFlags. */
+const PROCTOR = { MAX_PER_ATTEMPT: 120, MAX_IMG: 400000, TYPES: ['noFace', 'multi', 'away', 'talking', 'voice', 'dark', 'camOff'] };
+function proctorFlag_(u, p) {
+  const at = myAttempt_(u, clean_(p.examId, 40));
+  if (!at || at.status === 'submitted') return '';
+  if (PROCTOR.TYPES.indexOf(p.type) < 0) throw new Error('Unknown flag.');
+  if (rows_('ProctorFlags').filter(function (f) { return f.attemptId === at.id; }).length >= PROCTOR.MAX_PER_ATTEMPT) return '';
+  let file = null;
+  const m = /^data:image\/jpeg;base64,([A-Za-z0-9+\/=]+)$/.exec(String(p.img || ''));
+  if (m && m[1].length <= PROCTOR.MAX_IMG) {
+    try {
+      const folder = childFolder_(studentFolder_(u), 'Exam camera flags');
+      const name = clean_(p.at, 30).replace(/[:.]/g, '-') + '_' + p.type + '.jpg';
+      file = folder.createFile(Utilities.newBlob(Utilities.base64Decode(m[1]), 'image/jpeg', name));
+    } catch (e) { Logger.log('Proctor image save failed: ' + e.message); }
+  }
+  insert_('ProctorFlags', {
+    id: uid_('f'), attemptId: at.id, examId: at.examId, userId: u.id, type: p.type, label: clean_(p.label, 80),
+    section: clean_(p.section, 10), at: clean_(p.at, 30), fileId: file ? file.getId() : '', fileUrl: file ? file.getUrl() : ''
+  });
+  return '';
+}
+function proctorThumb_(fileId) { return fileId ? 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w400' : ''; }
+
+function getExamAttempt_(_, p) {
+  const at = byId_('ExamAttempts', p.id);
+  if (!at) throw new Error('Attempt not found.');
+  const e = byId_('Exams', at.examId);
+  const u = byId_('Users', at.userId);
+  return {
+    attempt: {
+      id: at.id, examId: at.examId, studentName: u ? u.name : '(removed)', status: at.status, section: num_(at.section),
+      startedAt: at.startedAt, submittedAt: at.submittedAt, answers: parseJson_(at.answers, {}), testResults: parseJson_(at.testResults, {}),
+      sectionLog: parseJson_(at.sectionLog, {}), autoScore: num_(at.autoScore), marks: parseJson_(at.marks, {}),
+      total: at.total === '' ? null : num_(at.total), integrity: parseJson_(at.integrity, null), comment: at.comment,
+      camera: rows_('ProctorFlags').filter(function (f) { return f.attemptId === at.id; })
+        .sort(function (a, b) { return String(a.at).localeCompare(b.at); })
+        .map(function (f) { return { type: f.type, label: f.label, section: f.section, at: f.at, fileUrl: f.fileUrl, thumb: proctorThumb_(f.fileId) }; })
+    },
+    exam: e ? examObj_(e) : null
+  };
+}
+
+function gradeExamAttempt_(_, p) {
+  const at = byId_('ExamAttempts', p.id);
+  if (!at) throw new Error('Attempt not found.');
+  const ex = examObj_(byId_('Exams', at.examId));
+  const given = p.marks && typeof p.marks === 'object' ? p.marks : {};
+  const marks = {};
+  let total = num_(at.autoScore);
+  ex.sections.forEach(function (s) {
+    const got = [];
+    (s.questions || []).forEach(function (q) {
+      if (q.type === 'mcq') return;
+      const v = given[q.id];
+      if (v === '' || v === null || v === undefined) return;
+      const n = Math.round(num_(v) * 2) / 2;
+      if (n < 0 || n > num_(q.marks)) throw new Error(q.id + ': marks must be between 0 and ' + q.marks + '.');
+      marks[q.id] = n;
+      got.push(n);
+    });
+    got.sort(function (a, b) { return b - a; });
+    total += (s.pick ? got.slice(0, s.pick) : got).reduce(function (a, b) { return a + b; }, 0);
+  });
+  update_('ExamAttempts', at, { marks: JSON.stringify(marks), total: total, comment: clean_(p.comment, 2000) });
+  return 'Marks saved · total ' + total + ' / ' + examTotal_(ex);
+}
+
+function resetExamAttempt_(_, p) {
+  const at = byId_('ExamAttempts', p.id);
+  if (!at) throw new Error('Attempt not found.');
+  remove_('ExamAttempts', function (x) { return x.id === p.id; });
+  revoke_(at.userId, 'exam:' + at.examId);
+  return 'Attempt deleted. The student can take the exam again.';
+}
+
+function saveExam_(_, p) {
+  if (p.json === undefined && p.id) {                       // quick toggle
+    const row = byId_('Exams', p.id);
+    if (!row) throw new Error('Exam not found.');
+    update_('Exams', row, { active: p.active ? 'TRUE' : 'FALSE', updatedAt: now_() });
+    return p.active ? 'Exam is open to students.' : 'Exam hidden from students.';
+  }
+  let d = p.json;
+  if (typeof d === 'string') { try { d = JSON.parse(d); } catch (err) { throw new Error('That is not valid JSON: ' + err.message); } }
+  if (!d || typeof d !== 'object') throw new Error('Paste the exam JSON.');
+  const title = clean_(d.title, 150);
+  if (!title) throw new Error('The exam needs a "title".');
+  if (!Array.isArray(d.sections) || !d.sections.length) throw new Error('The exam needs a non-empty "sections" list.');
+  const ids = {};
+  const sections = d.sections.map(function (s, i) {
+    const sid = clean_(s.id, 10) || String.fromCharCode(65 + i);
+    if (!Array.isArray(s.questions) || !s.questions.length) throw new Error('Section ' + sid + ' has no questions.');
+    return {
+      id: sid, title: clean_(s.title, 120) || 'Section ' + sid, instructions: clean_(s.instructions, 2000), pick: Math.max(0, Math.round(num_(s.pick))),
+      questions: s.questions.map(function (q, j) {
+        const qid = clean_(q.id, 20) || sid + (j + 1);
+        if (ids[qid]) throw new Error('Duplicate question id ' + qid + '.');
+        ids[qid] = true;
+        if (EXAM.TYPES.indexOf(q.type) < 0) throw new Error(qid + ': type must be mcq, text or code.');
+        const o = { id: qid, type: q.type, text: clean_(q.text, 4000), marks: num_(q.marks) || 1 };
+        if (q.title) o.title = clean_(q.title, 150);
+        if (q.code) o.code = String(q.code).slice(0, 4000);
+        if (q.mono) o.mono = true;
+        if (q.key) o.key = clean_(q.key, 2000);
+        if (q.type === 'mcq') {
+          if (!Array.isArray(q.options) || q.options.length < 2) throw new Error(qid + ': needs at least 2 options.');
+          o.options = q.options.map(function (x) { return clean_(x, 300); });
+          o.answer = Math.round(num_(q.answer));
+          if (o.answer < 0 || o.answer >= o.options.length) throw new Error(qid + ': "answer" must be the option number, starting at 0.');
+        }
+        if (q.type === 'code') {
+          o.starter = String(q.starter || '').slice(0, 4000);
+          o.tests = (Array.isArray(q.tests) ? q.tests : []).slice(0, 20).map(function (t) { return { input: String(t.input || '').slice(0, 2000), expect: clean_(t.expect, 2000) }; })
+            .filter(function (t) { return t.expect; });
+        }
+        return o;
+      })
+    };
+  });
+  const obj = {
+    title: title, description: clean_(d.description, 2000), durationMin: Math.max(5, Math.min(600, Math.round(num_(d.durationMin) || 120))),
+    sections: JSON.stringify(sections), active: d.active === false || d.active === 'false' ? 'FALSE' : 'TRUE', updatedAt: now_(),
+    maxExits: d.maxExits === undefined || d.maxExits === '' ? 5 : Math.max(0, Math.min(50, Math.round(num_(d.maxExits))))
+  };
+  const id = clean_(d.id, 40);
+  const row = id ? byId_('Exams', id) : null;
+  if (row) { update_('Exams', row, obj); return 'Exam updated.'; }
+  obj.id = id || uid_('e'); obj.createdAt = now_();
+  insert_('Exams', obj);
+  return 'Exam created.';
+}
+
+/* =====================================================================
+ * CodeTrack Lab: type-only editor, auto-checked tests, timed exams
+ * ===================================================================*/
+
+const LAB = { MODES: ['submit', 'lab', 'exam'], GRACE_MIN: 2, BURST_FLAG: 40, MAX_TESTS: 20, DEFAULT_SWITCHES: 3 };
+
+function parseJson_(v, dflt) {
+  if (v === null || v === undefined || v === '') return dflt;
+  if (typeof v === 'object') return v;
+  try { return JSON.parse(v); } catch (e) { return dflt; }
+}
+
+function modeOf_(a) { return LAB.MODES.indexOf(a.mode) >= 0 ? a.mode : 'submit'; }
+function testsOf_(a) {
+  const t = parseJson_(a.tests, []);
+  return Array.isArray(t) ? t : [];
+}
+
+/* 'yyyy-MM-ddTHH:mm' (IST wall clock) + n minutes, staying in the same wall-clock format. */
+function addMin_(s, n) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(s));
+  if (!m) return '';
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) + n * 60000);
+  return d.toISOString().slice(0, 16);
+}
+
+function normDateTime_(v) {
+  const s = clean_(v, 25).replace(' ', 'T');
+  if (!s) return '';
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) throw new Error('Exam times must look like 2026-11-26T09:30.');
+  return s.slice(0, 16);
+}
+
+function normTests_(v) {
+  let t = v;
+  if (typeof t === 'string') {
+    if (!t.trim()) return '';
+    try { t = JSON.parse(t); } catch (e) { throw new Error('Test cases are not valid JSON: ' + e.message); }
+  }
+  if (!Array.isArray(t)) throw new Error('Test cases must be a list.');
+  if (t.length > LAB.MAX_TESTS) throw new Error('At most ' + LAB.MAX_TESTS + ' test cases.');
+  const out = t.map(function (x, i) {
+    const expect = clean_(x && x.expect, 2000);
+    if (!expect) throw new Error('Test ' + (i + 1) + ' needs an expected output.');
+    return { input: String((x && x.input) || '').slice(0, 2000), expect: expect, hidden: bool_(x && x.hidden) };
+  });
+  return out.length ? JSON.stringify(out) : '';
+}
+
+/* Student view of an assignment: no expected output for hidden or exam tests. */
+function studentAssignment_(a) {
+  const c = strip_(a);
+  const mode = modeOf_(a);
+  c.mode = mode;
+  const tests = testsOf_(a);
+  delete c.tests;
+  if (mode !== 'submit') {
+    c.testCount = tests.length;
+    c.tests = tests.map(function (t) {
+      const o = { input: t.input, hidden: !!t.hidden || mode === 'exam' };
+      if (!o.hidden) o.expect = t.expect;
+      return o;
+    });
+  }
+  c.maxSwitches = c.maxSwitches === '' || c.maxSwitches === undefined ? LAB.DEFAULT_SWITCHES : num_(c.maxSwitches);
+  return c;
+}
+
+/* Students never see integrity data; exam scores stay hidden until the instructor reviews. */
+function studentSubView_(c) {
+  delete c.integrity;
+  const a = byId_('Assignments', c.assignmentId);
+  if (a && modeOf_(a) === 'exam' && c.status === 'submitted') { delete c.testScore; delete c.testResults; }
+  return c;
+}
+
+function normOut_(s) {
+  return String(s || '').replace(/\r/g, '').split('\n').map(function (l) { return l.replace(/\s+/g, ' ').trim(); })
+    .filter(function (l) { return l; }).join('\n').toLowerCase();
+}
+
+function gradeTests_(tests, outputs) {
+  outputs = Array.isArray(outputs) ? outputs : [];
+  let passed = 0;
+  const results = tests.map(function (t, i) {
+    const raw = String(outputs[i] === undefined || outputs[i] === null ? '' : outputs[i]).slice(0, 4000);
+    const got = normOut_(raw), want = normOut_(t.expect);
+    const ok = !!want && got.indexOf(want) >= 0;
+    if (ok) passed++;
+    return { ok: ok, output: raw.slice(0, 600) };
+  });
+  return { score: passed + '/' + tests.length, passed: passed, results: results };
+}
+
+function cleanIntegrity_(x, maxSwitches) {
+  x = x && typeof x === 'object' ? x : {};
+  const n = function (k) { const v = Math.round(num_(x[k])); return v < 0 ? 0 : Math.min(v, 1e7); };
+  const out = {};
+  ['typed', 'deleted', 'pasteBlocked', 'copyBlocked', 'maxBurst', 'tabSwitches', 'fsExits', 'strikes', 'camFlags', 'runs', 'errors', 'activeSec', 'totalSec', 'reloads', 'idleSec']
+    .forEach(function (k) { out[k] = n(k); });
+  out.bursts = (Array.isArray(x.bursts) ? x.bursts : []).slice(0, 30).map(function (b) {
+    return { t: Math.round(num_(b && b.t)), n: Math.round(num_(b && b.n)) };
+  });
+  out.timeline = (Array.isArray(x.timeline) ? x.timeline : []).slice(0, 400).map(function (v) { return Math.round(num_(v)); });
+  out.autoSubmitted = clean_(x.autoSubmitted, 40);
+  out.startedAt = clean_(x.startedAt, 25);
+  const flags = [];
+  if (out.maxBurst >= LAB.BURST_FLAG) flags.push('Large text insert (' + out.maxBurst + ' chars at once)');
+  if (out.pasteBlocked) flags.push(out.pasteBlocked + ' paste attempt' + (out.pasteBlocked > 1 ? 's' : ''));
+  if (out.tabSwitches > maxSwitches) flags.push('Left the page ' + out.tabSwitches + ' time' + (out.tabSwitches > 1 ? 's' : '') + (maxSwitches ? ' (limit ' + maxSwitches + ')' : ''));
+  if (out.fsExits) flags.push('Exited full screen ' + out.fsExits + 'x');
+  if (out.camFlags) flags.push(out.camFlags + ' camera/microphone alert' + (out.camFlags > 1 ? 's' : ''));
+  if (out.autoSubmitted) flags.push('Auto-submitted: ' + out.autoSubmitted);
+  out.flags = flags;
+  return out;
+}
+
+/* Lab / exam submission: code typed in CodeTrack Lab, outputs checked on the server. */
+function submitLab_(u, a, p, prev) {
+  const mode = modeOf_(a);
+  const nowS = now_();
+  if (mode === 'exam') {
+    if (a.examStart && nowS.slice(0, 16) < a.examStart) throw new Error('This exam has not started yet.');
+    if (a.examEnd && nowS.slice(0, 16) > addMin_(a.examEnd, LAB.GRACE_MIN)) throw new Error('This exam closed at ' + a.examEnd.slice(11) + '.');
+    if (prev.length && prev[0].status !== 'rework') throw new Error('You have already submitted this exam.');
+  }
+  const code = String(p.code || '');
+  if (!code.trim()) throw new Error('Write some code before submitting.');
+  if (code.length > 100000) throw new Error('That program is too long.');
+  const tests = testsOf_(a);
+  const g = tests.length ? gradeTests_(tests, p.testOutputs) : null;
+  const maxSw = a.maxSwitches === '' || a.maxSwitches === undefined ? LAB.DEFAULT_SWITCHES : num_(a.maxSwitches);
+  const integ = cleanIntegrity_(p.integrity, maxSw);
+
+  let file = null;
+  try {
+    const stamp = Utilities.formatDate(new Date(), APP.TZ, 'yyyyMMdd-HHmm');
+    file = studentFolder_(u).createFile(a.id + '__' + stamp + '__lab.py', code, MimeType.PLAIN_TEXT);
+  } catch (e) { Logger.log('Drive save failed: ' + e.message); }
+  const late = mode !== 'exam' && !!(a.due && nowS.slice(0, 16) > a.due);
+  insert_('Submissions', {
+    id: uid_('s'), assignmentId: a.id, userId: u.id, type: 'lab', fileName: a.id + '.py',
+    fileId: file ? file.getId() : '', fileUrl: file ? file.getUrl() : '', code: code,
+    submittedAt: nowS, late: late, status: 'submitted', comment: '', reviewedAt: '',
+    integrity: JSON.stringify(integ), testScore: g ? g.score : '', testResults: g ? JSON.stringify(g.results) : ''
+  });
+  const pts = late ? POINTS.SUBMIT_LATE : POINTS.SUBMIT_ON_TIME;
+  const got = award_(u.id, 'submit:' + a.id, pts, (late ? 'Late submission: ' : 'Submitted: ') + a.title);
+  let msg = (mode === 'exam' ? 'Exam submitted: "' : 'Submitted "') + a.title + '"';
+  if (g && mode !== 'exam') msg += ' · tests passed ' + g.score;
+  if (got) msg += ' · +' + pts + ' points';
+  if (late) msg += ' (late)';
+  return msg;
+}
+
 function submitAssignment_(u, p) {
   const days = visibleDays_(u);
   const dayIds = {};
@@ -841,6 +1303,10 @@ function submitAssignment_(u, p) {
   const prev = rows_('Submissions').filter(function (s) { return s.userId === u.id && s.assignmentId === a.id; })
     .sort(function (x, y) { return String(y.submittedAt).localeCompare(x.submittedAt); });
   if (prev.length && prev[0].status === 'approved') throw new Error('This assignment is already approved.');
+  if (modeOf_(a) !== 'submit') {
+    if (p.type !== 'lab') throw new Error('This assignment must be written in CodeTrack Lab.');
+    return submitLab_(u, a, p, prev);
+  }
 
   const type = p.type === 'file' ? 'file' : 'paste';
   const code = String(p.code || '');
@@ -880,7 +1346,20 @@ function getSubmission_(u, p) {
   if (!s) throw new Error('Submission not found.');
   if (u.role !== 'admin' && s.userId !== u.id) throw new Error('Not allowed.');
   const out = strip_(s);
-  if (u.role !== 'admin') { delete out.fileUrl; delete out.fileId; }
+  if (u.role !== 'admin') { delete out.fileUrl; delete out.fileId; studentSubView_(out); }
+  else {
+    out.integrity = parseJson_(s.integrity, null);
+    out.testResults = parseJson_(s.testResults, null);
+    const a = byId_('Assignments', s.assignmentId);
+    if (a) out.tests = testsOf_(a);
+  }
+  if (u.role !== 'admin' && out.testResults) {
+    const a = byId_('Assignments', s.assignmentId);
+    const tests = a ? testsOf_(a) : [];
+    out.testResults = (parseJson_(out.testResults, []) || []).map(function (r, i) {
+      return { ok: r.ok, output: tests[i] && tests[i].hidden ? '' : r.output, hidden: !!(tests[i] && tests[i].hidden) };
+    });
+  }
   return out;
 }
 
@@ -1213,6 +1692,7 @@ function saveAssignment_(_, p) {
     dayId: dayId, track: track, title: title, description: clean_(p.description, 8000),
     due: normDue_(p.due), active: p.active === false || p.active === 'false' ? 'FALSE' : 'TRUE'
   };
+  Object.assign(obj, labFields_(p));
   if (p.id) {
     const row = byId_('Assignments', p.id);
     if (!row) throw new Error('Assignment not found.');
@@ -1223,6 +1703,25 @@ function saveAssignment_(_, p) {
   obj.createdAt = now_();
   insert_('Assignments', obj);
   return 'Assignment created.';
+}
+
+function labFields_(p) {
+  const mode = LAB.MODES.indexOf(p.mode) >= 0 ? p.mode : 'submit';
+  const o = { mode: mode, tests: '', examStart: '', examEnd: '', maxSwitches: '' };
+  if (mode === 'submit') return o;
+  o.tests = normTests_(p.tests === undefined ? '' : p.tests);
+  if (p.maxSwitches !== undefined && p.maxSwitches !== '') {
+    const n = Math.round(num_(p.maxSwitches));
+    if (n < 0 || n > 20) throw new Error('Allowed tab switches must be between 0 and 20.');
+    o.maxSwitches = n;
+  }
+  if (mode === 'exam') {
+    o.examStart = normDateTime_(p.examStart);
+    o.examEnd = normDateTime_(p.examEnd);
+    if (!o.examStart || !o.examEnd) throw new Error('An exam needs a start and an end time.');
+    if (o.examEnd <= o.examStart) throw new Error('The exam must end after it starts.');
+  }
+  return o;
 }
 
 function deleteAssignment_(_, p) {
@@ -1299,6 +1798,7 @@ function importSyllabus_(data) {
         title: title, description: clean_(a.description, 8000), due: normDue_(a.due),
         active: a.active === false || a.active === 'false' ? 'FALSE' : 'TRUE'
       };
+      try { Object.assign(obj, labFields_(a)); } catch (e) { throw new Error('assignments[' + i + ']: ' + e.message); }
       if (existing[obj.id]) update_('Assignments', existing[obj.id], obj);
       else { obj.createdAt = now_(); fresh.push(obj); }
       aCount++;
@@ -1320,7 +1820,14 @@ function exportSyllabus_() {
       return { id: d.id, day: num_(d.day), week: num_(d.week), date: d.date, track: d.track, title: d.title, scrum: d.scrum, paper: d.paper, code: d.code, outcomes: d.outcomes };
     }),
     assignments: rows_('Assignments').map(function (a) {
-      return { id: a.id, dayId: a.dayId, track: a.track, title: a.title, description: a.description, due: a.due, active: bool_(a.active) };
+      const o = { id: a.id, dayId: a.dayId, track: a.track, title: a.title, description: a.description, due: a.due, active: bool_(a.active) };
+      const mode = modeOf_(a);
+      if (mode !== 'submit') {
+        o.mode = mode; o.tests = testsOf_(a);
+        if (a.maxSwitches !== '') o.maxSwitches = num_(a.maxSwitches);
+        if (mode === 'exam') { o.examStart = a.examStart; o.examEnd = a.examEnd; }
+      }
+      return o;
     })
   };
   return JSON.stringify(out, null, 2);

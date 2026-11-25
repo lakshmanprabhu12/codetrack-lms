@@ -1,0 +1,90 @@
+import sys, pathlib
+from playwright.sync_api import sync_playwright
+OUT = pathlib.Path(__file__).parent / "shots"; OUT.mkdir(exist_ok=True)
+URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8765/tools/exam-preview.html"
+errors = []
+def shot(p, n, full=True): p.wait_for_timeout(400); p.screenshot(path=str(OUT / f"xm_{n}.png"), full_page=full)
+def check(c, m):
+    print(("ok  " if c else "BAD ") + m)
+    if not c: errors.append(m)
+with sync_playwright() as pw:
+    b = pw.chromium.launch(); ctx = b.new_context(viewport={"width": 1366, "height": 860}); p = ctx.new_page()
+    p.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+    p.on("console", lambda m: m.type == "error" and "Failed to load resource" not in m.text and errors.append("console: " + m.text))
+    p.route("**/fonts.g*/**", lambda r: r.abort())
+    p.goto(URL); p.wait_for_selector("#lg-user"); shot(p, "0_login", False)
+    p.click("#demo-fill"); p.wait_for_selector(".xm-card")
+    check(p.locator(".sidenav").count() == 0 and p.locator(".welcome").count() == 0, "exam-only home, no app chrome")
+    shot(p, "1_home", False)
+    p.click("[data-act=xmOpen]"); p.wait_for_selector(".xm-rules")
+    check(p.is_disabled("[data-act=xmStart]"), "start disabled until agreed")
+    check("voice and video may be recorded" in p.inner_text(".xm-sheet"), "invigilation notice")
+    shot(p, "2_rules")
+    p.check(".xm-agree input"); p.click("[data-act=xmStart]"); p.wait_for_selector("[data-act=confirmYes]"); p.click("[data-act=confirmYes]")
+    p.wait_for_selector(".xm-take .xm-opt")
+    t = p.inner_text("#xm-timer"); check(t.strip().split()[-1].startswith(("2:00", "1:59")), "timer ~2:00:00 → " + t)
+    # answer 18 of 20 MCQs (correct for first 15)
+    key = ["b","c","c","b","b","b","c","b","a","b","a","c","b","c","b","c","b","c","c","a"]
+    for i, k in enumerate(key[:18]):
+        ans = k if i < 15 else "a"
+        p.locator(f"#q-A{i+1} .xm-opt").nth("abcd".index(ans)).click()
+    check("18 of 20" in p.inner_text("#xm-count"), "answered counter: " + p.inner_text("#xm-count"))
+    shot(p, "3_sectionA")
+    p.click("[data-act=xmSubmit]"); p.wait_for_selector("[data-act=confirmYes]")
+    check("2 questions not answered" in p.inner_text(".dialog"), "unanswered warning")
+    p.click("[data-act=confirmYes]"); p.wait_for_selector("#q-B1 textarea")
+    check(p.locator(".xm-steps li.done").count() == 1, "stepper shows A done")
+    # paste blocked in theory
+    p.evaluate("""() => { const t = document.querySelector('#q-B1 textarea'); const dt = new DataTransfer(); dt.setData('text/plain','copied answer');
+      t.dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true})); }""")
+    check(p.input_value("#q-B1 textarea") == "", "paste blocked in theory answer")
+    for q, a in [("B1", "= assigns a value, == compares two values. x = 5, x == 5"), ("B3", "/ gives 4.5 and // gives 4"), ("B7", "PROG RAM MARGORP")]:
+        p.click(f"#q-{q} textarea"); p.keyboard.type(a)
+    # leave window
+    p.evaluate("Object.defineProperty(document,'hidden',{configurable:true,get:()=>true}); document.dispatchEvent(new Event('visibilitychange')); Object.defineProperty(document,'hidden',{configurable:true,get:()=>false}); document.dispatchEvent(new Event('visibilitychange'))")
+    p.wait_for_selector("#xm-overlay"); shot(p, "4_overlay", False); p.click("[data-act=xmResume]")
+    shot(p, "5_sectionB")
+    p.click("[data-act=xmSubmit]"); p.click("[data-act=confirmYes]"); p.wait_for_selector("#q-C1 textarea")
+    p.click("#q-C1 textarea"); p.keyboard.type("visi noisiveR")
+    p.click("#q-C4 textarea"); p.keyboard.type('age = int(input("Age: "))\nif age >= 18:\n    print("Adult")')
+    shot(p, "6_sectionC")
+    p.click("[data-act=xmSubmit]"); p.click("[data-act=confirmYes]"); p.wait_for_selector("#q-D1 .lab textarea")
+    # D3 code + run
+    ta = p.locator("#q-D3 .lab textarea[data-r=ta]"); ta.click(); p.keyboard.press("Control+End")
+    p.keyboard.type('first = input("First name: ")\nlast = input("Last name: ")\nuser = first[:3] + last[-2:] + str(len(first) + len(last))\nprint(user.lower())')
+    p.locator("#q-D3 [data-r=run]").click()
+    for v in ("Priya", "Sharma"):
+        p.wait_for_selector("#q-D3 .o-ask input", timeout=60000); p.locator("#q-D3 .o-ask input").type(v); p.keyboard.press("Enter")
+    p.wait_for_selector("#q-D3 .lab-out .o-ok", timeout=60000)
+    check("prima11" in p.inner_text("#q-D3 .lab-out"), "D3 runs: prima11")
+    ta = p.locator("#q-D2 .lab textarea[data-r=ta]"); ta.click(); p.keyboard.press("Control+End")
+    p.keyboard.type('n = int(input())\nif n > 0:\nprint("Positive")\n'); p.keyboard.press("Backspace")
+    p.keyboard.type('elif n < 0:\nprint("Negative")\n'); p.keyboard.press("Backspace"); p.keyboard.type('else:\nprint("Zero")\n'); p.keyboard.press("Backspace")
+    p.keyboard.type('if n % 2 == 0:\nprint("Even")\n'); p.keyboard.press("Backspace"); p.keyboard.type('else:\nprint("Odd")')
+    shot(p, "7_sectionD")
+    p.click("[data-act=xmSubmit]"); p.click("[data-act=confirmYes]")
+    p.wait_for_selector(".xm-done", timeout=60000)
+    check("evaluated" in p.inner_text(".xm-done") and "announced soon" in p.inner_text(".xm-done"), "done screen")
+    shot(p, "8_done", False)
+    p.click("[data-act=xmClose]"); p.wait_for_selector(".xm-card")
+    check("Submitted" in p.inner_text(".xm-card"), "home shows submitted")
+    # instructor view (not in the preview UI): log in as admin via API in the page and open marking
+    p.evaluate("localStorage.setItem('codetrack_token_v1', window.__adminToken)")
+    p.click("[data-act=signOut]"); p.wait_for_selector("#lg-user")
+    p.fill("#lg-user", "admin"); p.fill("#lg-pass", "ChangeMe@123"); p.click(".login-form .btn.filled")
+    p.wait_for_selector(".welcome"); p.keyboard.press("Escape")
+    p.click(".sidenav .nav-item:has-text('Exams')"); p.wait_for_selector("tr.click")
+    row = p.inner_text("tr.click"); check("To mark" in row and "15" in row, "admin list: " + row.replace("\n", " | "))
+    shot(p, "9_admin_list", False)
+    p.click("tr.click"); p.wait_for_selector(".xm-mark-sec")
+    txt = p.inner_text(".dialog"); i = txt.find("D2"); print(txt[i:i+700]); print("BTNS", p.locator(".dialog-actions button").all_inner_texts())
+    check("2/3" in txt or "3/3" in txt, "D2 tests graded in marking dialog")
+    p.fill("input[name=m_B1]", "3"); p.fill("input[name=m_B3]", "3"); p.fill("input[name=m_D3]", "8")
+    shot(p, "10_marking")
+    
+    try: p.locator(".dialog-actions .btn.filled").click(timeout=4000)
+    except Exception as ex: print("CLICKERR", str(ex)[-900:]); p.evaluate("document.querySelector('.dialog-actions .btn.filled').click()")
+    p.wait_for_timeout(1200)
+    check("29 / 100" in p.inner_text("tr.click"), "total after marking: " + p.inner_text("tr.click").replace("\n", " | "))
+    b.close()
+print("\n".join(errors) if errors else "ALL GOOD"); sys.exit(1 if errors else 0)

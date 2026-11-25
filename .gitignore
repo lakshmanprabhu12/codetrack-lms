@@ -4,3 +4,12 @@ tools/preview.html
 tools/shots/
 CodeTrack.zip
 .DS_Store
+# built previews (contain test data / exam content)
+tools/*.html
+preview-full/
+trial/
+trial-proctor/
+# never commit real exam papers (answer keys) or password hashes - the repo is public
+tools/revision-test.json
+tools/trial-users.json
+exams-private/

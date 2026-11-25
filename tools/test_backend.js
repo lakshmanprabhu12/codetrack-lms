@@ -223,6 +223,141 @@ ok(/Too many/.test(err('login', null, { username: 'meena.r', password: 'meena99'
 // --- sizes
 ad = must('bootstrap', T);
 console.log('admin state size:', JSON.stringify(ad).length, 'bytes; student:', JSON.stringify(must('bootstrap', P2.length ? must('login', null, { username: 'priya.sharma', password: 'newpass' }).token : '')).length);
+// --- CodeTrack Lab
+{
+  __setNow('2026-11-26T03:45:00Z');            // 09:15 IST
+  const L = must('login', null, { username: 'priya.sharma', password: 'newpass' }).token;
+  ok(/expected output/.test(err('saveAssignment', T, { title: 'Bad', dayId: 'd01', mode: 'lab', tests: [{ input: '1' }] })), 'test needs expect');
+  ok(/end after/.test(err('saveAssignment', T, { title: 'Bad', dayId: 'd01', mode: 'exam', examStart: '2026-11-26T10:00', examEnd: '2026-11-26T09:00' })), 'exam end after start');
+  ok(/between 0 and 20/.test(err('saveAssignment', T, { title: 'Bad', dayId: 'd01', mode: 'lab', maxSwitches: 50 })), 'switch limit range');
+  must('saveAssignment', T, { title: 'Pass or Fail', dayId: 'd01', description: 'x', due: '2026-11-30T23:59', mode: 'lab',
+    tests: JSON.stringify([{ input: '75', expect: 'Pass' }, { input: '20', expect: 'Fail' }, { input: '35', expect: 'Pass', hidden: true }]) });
+  must('saveAssignment', T, { title: 'Revision exam', dayId: 'd01', mode: 'exam', examStart: '2026-11-26T09:00', examEnd: '2026-11-26T11:00', maxSwitches: 2,
+    tests: [{ input: '4', expect: '16' }] });
+  let ad = must('bootstrap', T);
+  const lab = ad.assignments.find(a => a.title === 'Pass or Fail'), ex = ad.assignments.find(a => a.title === 'Revision exam');
+  ok(lab.mode === 'lab' && JSON.parse(lab.tests).length === 3, 'lab saved with tests');
+  ok(ex.examStart === '2026-11-26T09:00' && ex.maxSwitches === '2', 'exam saved');
+  let s = must('bootstrap', L);
+  const sl = s.assignments.find(a => a.id === lab.id), se = s.assignments.find(a => a.id === ex.id);
+  ok(sl.tests.length === 3 && sl.tests[0].expect === 'Pass' && !('expect' in sl.tests[2]) && sl.tests[2].hidden, 'hidden test expect not sent');
+  ok(se.tests.every(t => !('expect' in t)) && se.maxSwitches === 2, 'exam tests hidden from student');
+  ok(typeof s.serverNow === 'string' && s.serverNow.startsWith('2026-11-26T09:15'), 'serverNow in state');
+  ok(/CodeTrack Lab/.test(err('submitAssignment', L, { assignmentId: lab.id, type: 'paste', code: 'x' })), 'lab rejects paste type');
+  let r = must('submitAssignment', L, { assignmentId: lab.id, type: 'lab', code: 'm=int(input())\nprint("Pass" if m>=35 else "Fail")',
+    testOutputs: ['Enter marks: Pass\n', 'Enter marks: fail', 'nope'],
+    integrity: { typed: 60, maxBurst: 55, pasteBlocked: 2, tabSwitches: 1, timeline: [1, 2, 3], evil: '=cmd' } });
+  ok(/tests passed 2\/3/.test(r.msg), 'graded 2/3: ' + r.msg);
+  const sub1 = r.state.submissions.find(x => x.assignmentId === lab.id);
+  ok(sub1.testScore === '2/3' && !('integrity' in sub1), 'student sees practice score, not integrity');
+  const g = must('getSubmission', L, { id: sub1.id });
+  ok(g.testResults.length === 3 && g.testResults[2].hidden && g.testResults[2].output === '' && !g.integrity, 'student detail hides hidden output');
+  ad = must('bootstrap', T);
+  const as1 = ad.submissions.find(x => x.id === sub1.id);
+  ok(as1.flags.length === 2 && /Large text/.test(as1.flags[0]) && as1.testScore === '2/3', 'admin sees flags: ' + as1.flags.join('; '));
+  const ga = must('getSubmission', T, { id: sub1.id });
+  ok(ga.integrity.typed === 60 && !('evil' in ga.integrity) && ga.tests.length === 3 && ga.testResults[0].ok, 'admin full integrity');
+  // exam window
+  __setNow('2026-11-26T03:20:00Z');            // 08:50 IST, before start
+  ok(/not started/.test(err('submitAssignment', L, { assignmentId: ex.id, type: 'lab', code: 'print(16)', testOutputs: ['16'] })), 'exam not open yet');
+  __setNow('2026-11-26T05:33:00Z');            // 11:03 IST, inside 2-min grace? no (11:03 > 11:02)
+  ok(/closed/.test(err('submitAssignment', L, { assignmentId: ex.id, type: 'lab', code: 'print(16)' })), 'exam closed after grace');
+  __setNow('2026-11-26T05:31:00Z');            // 11:01 IST, within grace
+  r = must('submitAssignment', L, { assignmentId: ex.id, type: 'lab', code: 'x=int(input())\nprint(x*x)', testOutputs: ['16'], integrity: { tabSwitches: 3, autoSubmitted: 'time up' } });
+  ok(/Exam submitted/.test(r.msg) && !/tests passed/.test(r.msg), 'exam submitted, score hidden: ' + r.msg);
+  const es = r.state.submissions.find(x => x.assignmentId === ex.id);
+  ok(!('testScore' in es), 'exam score hidden from student until reviewed');
+  ok(/already submitted/.test(err('submitAssignment', L, { assignmentId: ex.id, type: 'lab', code: 'print(1)' })), 'exam single attempt');
+  ad = must('bootstrap', T);
+  const ae = ad.submissions.find(x => x.id === es.id);
+  ok(ae.testScore === '1/1' && ae.flags.some(f => /Left the page 3/.test(f)) && ae.flags.some(f => /time up/.test(f)), 'exam flags: ' + ae.flags.join('; '));
+  must('reviewSubmission', T, { id: es.id, status: 'approved', comment: '' });
+  s = must('bootstrap', L);
+  ok(s.submissions.find(x => x.id === es.id).testScore === '1/1', 'exam score visible after review');
+  // export/import round trip keeps lab fields
+  const exp = JSON.parse(must('exportSyllabus', T).text || must('exportSyllabus', T));
+  const ea = exp.assignments.find(a => a.id === ex.id);
+  ok(ea && ea.mode === 'exam' && ea.tests.length === 1 && ea.examEnd === '2026-11-26T11:00', 'export keeps exam fields');
+  // old sheet without the new columns gets them added automatically
+  const sheet = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID')).getSheetByName('Submissions');
+  const hdrBefore = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  ok(hdrBefore.indexOf('integrity') > 0 && hdrBefore.indexOf('testResults') > 0, 'new columns present on sheet');
+  const asg = sheet.getParent ? null : SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID')).getSheetByName('Assignments');
+  const n0 = asg.getLastColumn();
+  asg.getRange(1, n0 - 4, 1, 5).setValues([['', '', '', '', '']]);     // pretend this is an old sheet
+  clearMem();
+  ok(asg.getRange(1, 1, 1, 20).getValues()[0].indexOf('mode') < 0, 'old header simulated');
+  const hs = headers_('Assignments');
+  ok(hs.slice(-5).join() === 'mode,tests,examStart,examEnd,maxSwitches' && asg.getRange(1, n0, 1, 1).getValues()[0][0] === 'maxSwitches', 'missing columns auto-added');
+  ok(must('bootstrap', L).assignments.some(a => a.mode === 'exam'), 'data intact after auto-add');
+}
+// --- Sectioned exams (uses the private paper in tools/revision-test.json when present; it is git-ignored)
+if (!fs.existsSync(dir('tools/revision-test.json'))) console.log('  (skipping exam tests: tools/revision-test.json not found)');
+else {
+  __setNow('2026-11-26T03:30:00Z');            // 09:00 IST
+  const paper = JSON.parse(fs.readFileSync(dir('tools/revision-test.json'), 'utf8'));
+  ok(/valid JSON/.test(err('saveExam', T, { json: '{bad' })), 'bad exam json');
+  ok(/type must be/.test(err('saveExam', T, { json: { title: 'x', sections: [{ questions: [{ type: 'essay' }] }] } })), 'bad question type');
+  must('saveExam', T, { json: JSON.stringify(paper) });
+  let ad = must('bootstrap', T);
+  ok(ad.exams.length === 1 && ad.exams[0].sections.length === 4, 'exam stored');
+  const X = must('login', null, { username: 'priya.sharma', password: 'newpass' }).token;
+  let s = must('bootstrap', X);
+  const e = s.exams[0];
+  ok(e && e.total === 100 && !e.attempt, 'student sees exam, total 100');
+  const flat = JSON.stringify(e);
+  ok(!/"answer"/.test(flat) && !/"key"/.test(flat) && !/"expect"/.test(flat), 'no answers/keys/expected outputs leak');
+  ok(/Start the exam/.test(err('submitExamSection', X, { examId: e.id, sectionId: 'A', answers: {} })), 'must start first');
+  let r = must('startExam', X, { examId: e.id });
+  ok(r.state.exams[0].attempt.status === 'in_progress' && r.state.exams[0].attempt.deadline === '2026-11-26T11:00', 'attempt started, deadline 11:00');
+  must('startExam', X, { examId: e.id });   // idempotent
+  ok(/already submitted|Refresh/.test(err('submitExamSection', X, { examId: e.id, sectionId: 'B', answers: {} })), 'cannot skip to section B');
+  const ans = {}; paper.sections[0].questions.forEach((q, i) => { ans[q.id] = i < 15 ? q.answer : (q.answer + 1) % 4; });
+  r = must('submitExamSection', X, { examId: e.id, sectionId: 'A', answers: ans, integrity: { typed: 0 } });
+  ok(/Section A submitted/.test(r.msg) && r.state.exams[0].attempt.section === 1, 'section A submitted → B');
+  ok(/already submitted|Refresh/.test(err('submitExamSection', X, { examId: e.id, sectionId: 'A', answers: ans })), 'section A locked');
+  must('submitExamSection', X, { examId: e.id, sectionId: 'B', answers: { B1: '= assigns, == compares', B3: '4.5 and 4' } });
+  must('submitExamSection', X, { examId: e.id, sectionId: 'C', answers: { C1: 'visi noisiveR' } });
+  __setNow('2026-11-26T05:20:00Z');            // 10:50
+  r = must('submitExamSection', X, { examId: e.id, sectionId: 'D', answers: { D2: 'n=int(input())\nprint("Positive")', D3: 'x' },
+    testOutputs: { D2: ['Positive\nOdd', 'Negative', 'Zero\nEven'], D3: ['prima11', 'nope'] }, integrity: { pasteBlocked: 1, tabSwitches: 5 } });
+  ok(/Exam submitted/.test(r.msg) && r.state.exams[0].attempt.status === 'submitted', 'exam submitted after D');
+  ok(/already submitted/.test(err('submitExamSection', X, { examId: e.id, sectionId: 'D', answers: {} })), 'no resubmit');
+  ad = must('bootstrap', T);
+  const sum = ad.examAttempts[0];
+  ok(sum.autoScore === 15 && sum.status === 'submitted' && sum.flags.length === 2, 'auto MCQ score 15, flags: ' + sum.flags.join('; '));
+  const g = must('getExamAttempt', T, { id: sum.id });
+  ok(g.attempt.testResults.D2.score === '2/3' && g.attempt.testResults.D3.score === '1/2', 'code tests graded (all-lines rule)');
+  ok(g.attempt.answers.B1 && g.exam.sections[0].questions[0].answer === 1, 'admin gets answers + key');
+  ok(/between 0 and 3/.test(err('gradeExamAttempt', T, { id: sum.id, marks: { B1: 5 } })), 'mark range checked');
+  r = must('gradeExamAttempt', T, { id: sum.id, marks: { B1: 3, B2: 3, B3: 3, B4: 3, B5: 3, B6: 3, B7: 3, C1: 2, D2: 6.5 } });
+  ok(/total 41.5 \/ 100/.test(r.msg), 'best 6 of B counted: ' + r.msg);
+  // time limit: second student starts late and submits past deadline
+  const Y = must('login', null, { username: 'priya.sharma', password: 'newpass' }).token;
+  must('resetExamAttempt', T, { id: sum.id });
+  __setNow('2026-11-26T04:00:00Z');            // 09:30 start
+  must('startExam', Y, { examId: e.id });
+  __setNow('2026-11-26T06:10:00Z');            // 11:40 > 11:30 + 3 min grace
+  r = must('submitExamSection', Y, { examId: e.id, sectionId: 'A', answers: {} });
+  ok(r.state.exams[0].attempt.status === 'submitted', 'late submit finalises exam');
+  ad = must('bootstrap', T);
+  ok(ad.examAttempts[0].flags.some(f => /time limit/.test(f)), 'late flag');
+  // camera flags → Drive + sheet
+  must('resetExamAttempt', T, { id: must('bootstrap', T).examAttempts[0].id });
+  __setNow('2026-11-26T04:00:00Z');
+  must('startExam', Y, { examId: e.id });
+  const img = 'data:image/jpeg;base64,' + Buffer.from('fake-jpeg-bytes').toString('base64');
+  r = A('proctorFlag', Y, { examId: e.id, type: 'multi', label: 'Another person in view', section: 'A', at: '2026-11-26T04:05:00.000Z', img });
+  ok(r.ok && r.data.state === null, 'proctorFlag accepted without state');
+  ok(/Unknown flag/.test(err('proctorFlag', Y, { examId: e.id, type: 'hack' })), 'bad flag type');
+  A('proctorFlag', Y, { examId: e.id, type: 'noFace', label: 'No face in view', section: 'A', at: '2026-11-26T04:06:00.000Z', img: 'data:text/html;base64,PHNjcmlwdD4=' });
+  const aid2 = must('bootstrap', T).examAttempts[0].id;
+  const ga2 = must('getExamAttempt', T, { id: aid2 });
+  ok(ga2.attempt.camera.length === 2 && /thumbnail\?id=/.test(ga2.attempt.camera[0].thumb) && ga2.attempt.camera[1].thumb === '', 'camera flags listed, only real JPEGs saved: ' + JSON.stringify(ga2.attempt.camera.map(c => c.type)));
+  ok(rows_('ProctorFlags').length === 2, 'ProctorFlags sheet rows');
+  must('saveExam', T, { id: e.id, active: false });
+  ok(must('bootstrap', Y).exams.length === 0, 'inactive exam hidden');
+}
 // --- HTTP layer (what GitHub Pages calls)
 const health = JSON.parse(doGet().getContent());
 ok(health.ok && health.ready && health.app === 'CodeTrack', 'doGet health check');

@@ -37,6 +37,7 @@ const STUDENT_NAV = [
   { id: 'dashboard',   icon: 'space_dashboard', label: 'Dashboard' },
   { id: 'plan',        icon: 'calendar_month',  label: 'Study plan' },
   { id: 'assignments', icon: 'assignment',      label: 'Assignments', badge: () => pendingAssignments().length },
+  { id: 'lab',         icon: 'terminal',        label: 'Python Lab' },
   { id: 'materials',   icon: 'folder_open',     label: 'Study materials' },
   { id: 'doubts',      icon: 'forum',           label: 'Doubts & Q&A' },
   { id: 'reflection',  icon: 'edit_note',       label: 'Daily reflection' },
@@ -50,6 +51,7 @@ const ADMIN_NAV = [
   { id: 'syllabus',   icon: 'menu_book',    label: 'Syllabus & plans' },
   { id: 'students',   icon: 'group',        label: 'Students',     badge: () => S.data.counts.trackRequests },
   { id: 'announce',   icon: 'campaign',     label: 'Announcements' },
+  { id: 'exams',      icon: 'quiz',         label: 'Exams',        badge: () => (S.data.examAttempts || []).filter(x => x.status === 'submitted' && !x.graded).length },
   { id: 'adoubts',    icon: 'forum',        label: 'Doubts',       badge: () => S.data.counts.openDoubts },
   { id: 'areflect',   icon: 'edit_note',    label: 'Reflections' },
   { id: 'materials',  icon: 'folder_open',  label: 'Study materials' },
@@ -108,6 +110,7 @@ function setLoading(n) {
   const lb = $('#loadbar'); if (lb) lb.classList.toggle('on', S.loading > 0);
 }
 const API_URL = (window.CODETRACK_CONFIG || {}).apiUrl || '';
+const EXAM_ONLY = !!(window.CODETRACK_CONFIG || {}).examOnly;
 async function call(action, payload) {
   if (!API_URL) throw new Error('API URL missing — set apiUrl in config.js.');
   setLoading(1);
@@ -173,6 +176,11 @@ async function boot() {
 function defaultView() { return S.data && S.data.role === 'admin' ? 'overview' : 'dashboard'; }
 function signOut(msg) {
   S.token = null; S.data = null; S.materials = null; S.mounted = null; S.sub = {}; S.draft = {}; S.file = null; S.welcome = false;
+  destroyLabs(); stopExam();
+  if (S.xm && S.xm.timer) clearInterval(S.xm.timer);
+  if (window.CTProctor) window.CTProctor.stop();
+  S.xm = null;
+  const ov = $('#xm-overlay'); if (ov) ov.remove();
   store(LS_KEY, null);
   closeDialog(); closeMenu();
   renderLogin(msg);
@@ -183,9 +191,9 @@ function renderLogin(msg) {
   <div class="login-wrap"><div style="width:100%">
     <div class="login-card" style="margin:0 auto">
       <div>
-        <div class="brand">${logo()}<span><b>Code</b>Track</span></div>
+        ${EXAM_ONLY ? `<div class="brand"><span class="logo-mark">${icon('school')}</span><span>${esc((window.CODETRACK_CONFIG || {}).brandName || 'Online assessment')}</span></div>` : `<div class="brand">${logo()}<span><b>Code</b>Track</span></div>`}
         <h1>Sign in</h1>
-        <div class="lead">to continue to your learning dashboard</div>
+        <div class="lead">${EXAM_ONLY ? 'to take your exam' : 'to continue to your learning dashboard'}</div>
       </div>
       <form data-form="login" autocomplete="on" class="login-form" style="padding-top:56px">
         <div class="field"><input name="username" id="lg-user" placeholder=" " autocomplete="username" autocapitalize="none" required><label for="lg-user">Name or username</label></div>
@@ -195,7 +203,7 @@ function renderLogin(msg) {
         <div class="login-actions"><span class="muted small">Forgot your password? Ask your instructor to reset it.</span><button class="btn filled">Next</button></div>
       </form>
     </div>
-    <div class="login-foot"><span>CodeTrack · Learning tracker</span><span>Your progress is saved automatically</span></div>
+    <div class="login-foot"><span>${EXAM_ONLY ? 'Online assessment' : 'CodeTrack · Learning tracker'}</span><span>${EXAM_ONLY ? 'Use the name and password your instructor gave you' : 'Your progress is saved automatically'}</span></div>
   </div></div>`;
   setTimeout(() => { const u = $('#lg-user'); if (u) u.focus(); }, 50);
 }
@@ -238,6 +246,9 @@ function renderChrome() {
 
 function render() {
   if (!S.data) return renderLogin();
+  if (S.xm && window.CTApp.exam) return window.CTApp.exam.renderXm();
+  if (EXAM_ONLY && S.data.role === 'student' && window.CTApp.exam) return window.CTApp.exam.renderExamHome();
+  if (S.exam) return renderExam();
   if (S.welcome) return renderWelcome();
   if (!$('#page') || S.mounted !== S.data.role) mountShell();
   const valid = (S.data.role === 'admin' ? ADMIN_NAV : STUDENT_NAV).some(n => n.id === S.view);
@@ -252,6 +263,7 @@ function renderPage() {
   afterRender(page);
 }
 function afterRender(root) {
+  mountLabs(root);
   if (window.hljs) {
     $$('pre.code code', root).forEach(el => { if (!el.dataset.hl) { try { hljs.highlightElement(el); } catch (e) { /* ignore */ } el.dataset.hl = '1'; } });
   }
@@ -401,6 +413,7 @@ V.dashboard = () => {
   return `
   <div class="page-head"><div><h1 class="h1">${greet()}, ${esc(first(d.user.name))}</h1>
     <p class="muted">${fmtDate(d.today)} · ${esc(d.settings.courseTitle)}${d.user.trackStatus === 'approved' ? ' · ' + esc(trackName(d.user.track)) : ''}</p></div></div>
+  ${window.CTApp.exam ? window.CTApp.exam.examCards(false) : ''}
   ${trackBanner()}
   <div class="stats">
     ${statCard('trending_up', 'Course progress', st.progressPct + '%', `${st.itemsDone} of ${st.totalItems} sessions done`, bar(st.progressPct))}
@@ -557,6 +570,7 @@ V.assignments = () => {
       : emptyState(fsel === 'pending' ? 'task_alt' : 'inbox', fsel === 'pending' ? "Nothing pending — nice work!" : 'Nothing here yet.')}`;
 };
 function assignmentDetail(a) {
+  if (a.mode === 'lab' || a.mode === 'exam') return labAssignmentDetail(a);
   const st = aState(a), subs = subsFor(a.id), d = dayById(a.dayId);
   const canSubmit = st !== 'approved';
   return `
@@ -568,16 +582,24 @@ function assignmentDetail(a) {
       <div class="card"><div class="card-head"><div class="h3">${icon('description')} Instructions</div></div><div>${rich(a.description) || '<span class="muted">No extra instructions.</span>'}</div></div>
       ${canSubmit ? submitCard(a, subs.length) : `<div class="banner ok">${icon('verified')}<div class="grow">Approved — great job! This assignment is complete.</div></div>`}
     </div>
-    <div class="col"><div class="card"><div class="card-head"><div class="h3">${icon('history')} Your submissions</div></div>
+    <div class="col">${mySubmissionsCard(subs)}</div>
+  </div>`;
+}
+function mySubmissionsCard(subs) {
+  return `<div class="card"><div class="card-head"><div class="h3">${icon('history')} Your submissions</div></div>
       ${subs.length ? subs.map(s => `<div class="list-item" style="align-items:flex-start">
-        <span class="lead-icon ${A_STATUS[s.status] ? A_STATUS[s.status].cls : ''}">${icon(s.type === 'file' ? 'upload_file' : 'code')}</span>
-        <div class="grow"><div class="row" style="gap:6px">${statusPill(s.status)}${s.late === 'TRUE' ? pill('Late', 'red') : ''}</div>
-          <div class="meta" style="margin-top:4px">${fmtDT(s.submittedAt)} · ${esc(s.fileName)}</div>
+        <span class="lead-icon ${A_STATUS[s.status] ? A_STATUS[s.status].cls : ''}">${icon(s.type === 'file' ? 'upload_file' : s.type === 'lab' ? 'terminal' : 'code')}</span>
+        <div class="grow"><div class="row" style="gap:6px">${statusPill(s.status)}${s.late === 'TRUE' ? pill('Late', 'red') : ''}${s.testScore ? scorePill(s.testScore) : ''}</div>
+          <div class="meta" style="margin-top:4px">${fmtDT(s.submittedAt)} · ${s.type === 'lab' ? 'written in Lab' : esc(s.fileName)}</div>
           ${s.comment ? `<div class="outcomes" style="background:${s.status === 'rework' ? 'var(--amber-soft)' : 'var(--green-soft)'}">${icon('comment')}<div><b>Instructor:</b> ${rich(s.comment)}</div></div>` : ''}
           <button class="btn text sm" style="margin:6px 0 0 -14px" data-act="viewSub" data-id="${esc(s.id)}">${icon('visibility')} View code</button></div>
       </div>`).join('') : `<div class="muted small">No submissions yet.</div>`}
-    </div></div>
-  </div>`;
+    </div>`;
+}
+function scorePill(sc) {
+  const m = /^(\d+)\/(\d+)$/.exec(sc || '');
+  if (!m) return '';
+  return pill('Tests ' + sc, +m[1] === +m[2] ? 'green' : +m[1] === 0 ? 'red' : 'amber', 'fact_check');
 }
 function submitCard(a, prevCount) {
   const mode = S.subMode;
@@ -602,6 +624,235 @@ function filePreview() {
   return `<div class="row between" style="margin-bottom:8px"><div class="row">${icon('description')} <b>${esc(f.name)}</b> <span class="muted small">${(f.size / 1024).toFixed(1)} KB · ${plural(lines.length, 'line')}</span></div>
     <button type="button" class="btn text sm danger" data-act="clearFile">${icon('close')} Remove</button></div>
     <pre class="code" style="max-height:260px"><code class="language-python">${esc(lines.slice(0, 60).join('\n'))}${lines.length > 60 ? '\n…' : ''}</code></pre>`;
+}
+
+
+/* ================================================================
+ * CodeTrack Lab: practice labs, playground and timed exams
+ * ================================================================ */
+S.labs = {};
+function labKey(kind, id) { return (S.data && S.data.user ? S.data.user.id : 'x') + ':' + kind + ':' + id; }
+function getLab(key, opts) {
+  if (S.labs[key]) return S.labs[key];
+  if (!window.CTLab) return null;
+  S.labs[key] = window.CTLab.create(Object.assign({ key: key, toast: toast }, opts));
+  return S.labs[key];
+}
+function destroyLab(key) { const l = S.labs[key]; if (l) { l.destroy(); delete S.labs[key]; } }
+function destroyLabs() { Object.keys(S.labs || {}).forEach(destroyLab); }
+function mountLabs(root) {
+  $$('[data-lab]', root).forEach(ph => {
+    const lab = S.labs[ph.dataset.lab];
+    if (!lab) { ph.innerHTML = emptyState('error', 'The Lab could not load in this browser.'); return; }
+    ph.appendChild(lab.el);
+    requestAnimationFrame(() => lab.paint());
+  });
+}
+function labMount(key) { return `<div class="lab-mount" data-lab="${esc(key)}"></div>`; }
+function practiceLab(a) {
+  return getLab(labKey('a', a.id), {
+    title: 'main.py', tests: a.tests || [], submitLabel: 'Submit',
+    starter: '# ' + a.title + '\n# Type your solution below. Paste is turned off.\n\n',
+    onSubmit: async p => {
+      if (!(await confirmDialog('Submit your code?', 'Your code and test results will be sent to your instructor.', 'Submit'))) return;
+      const r = await act('submitAssignment', { assignmentId: a.id, type: 'lab', code: p.code, testOutputs: p.testOutputs, integrity: p.integrity });
+      if (r) window.scrollTo(0, 0);
+    }
+  });
+}
+
+/* IST wall-clock string <-> epoch ms (IST has no daylight saving) */
+function istMs(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(s || '');
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) - 330 * 60000 : NaN;
+}
+function examPhase(a) {
+  const sub = subsFor(a.id)[0];
+  if (sub && sub.status !== 'rework') return 'done';
+  const now = (S.data.serverNow || nowStamp()).slice(0, 16);
+  if (a.examStart && now < a.examStart) return 'soon';
+  if (a.examEnd && now >= a.examEnd) return 'closed';
+  return 'open';
+}
+function labAssignmentDetail(a) {
+  const st = aState(a), subs = subsFor(a.id), d = dayById(a.dayId);
+  const exam = a.mode === 'exam';
+  const head = `<button class="btn text" data-act="backToAssignments" style="margin:-6px 0 8px -12px">${icon('arrow_back')} All assignments</button>
+  <div class="page-head"><div><div class="row" style="margin-bottom:6px">${statusPill(st)}${pill(exam ? 'Lab exam' : 'CodeTrack Lab', exam ? 'violet' : 'teal', exam ? 'timer' : 'terminal')}${d && d.track !== 'common' ? trackPill(d.track) : ''}</div>
+    <h1 class="h1">${esc(a.title)}</h1><p class="muted">${d ? esc(dayLabel(d)) + ' · ' : ''}${exam ? 'Exam window ' + fmtDT(a.examStart) + ' – ' + fmtTime((a.examEnd || '').slice(11, 16)) : dueText(a)}</p></div></div>`;
+  if (exam) return head + examGate(a, subs);
+  const lab = st === 'approved' ? null : practiceLab(a);
+  return head + `
+  <div class="col">
+    <div class="card"><div class="card-head"><div class="h3">${icon('description')} Instructions</div>${a.testCount ? pill(plural(a.testCount, 'test case'), 'blue', 'fact_check') : ''}</div><div>${rich(a.description) || '<span class="muted">No extra instructions.</span>'}</div></div>
+    ${lab ? labMount(labKey('a', a.id)) : `<div class="banner ok">${icon('verified')}<div class="grow">Approved — great job! This assignment is complete.</div></div>`}
+    ${mySubmissionsCard(subs)}
+  </div>`;
+}
+function examGate(a, subs) {
+  const ph = examPhase(a), sub = subs[0];
+  const rules = `<ul class="exam-rules">
+      <li>The exam opens in <b>full screen</b>. Stay in this window until you submit.</li>
+      <li>Paste, copy and right-click are turned off. Type everything yourself.</li>
+      <li>Leaving the window is recorded${a.maxSwitches > 0 ? `; after <b>${plural(a.maxSwitches, 'switch')}</b> your exam is submitted automatically` : ''}.</li>
+      <li>When the timer reaches zero your code is submitted automatically.</li>
+      <li>Your work is saved in this browser as you type, so a refresh won't lose it.</li></ul>`;
+  let body;
+  if (ph === 'done') body = `<div class="banner ok">${icon('task_alt')}<div class="grow"><b>Submitted</b> at ${fmtDT(sub.submittedAt)}. ${sub.status === 'approved' ? 'Your instructor has reviewed it.' : 'Your instructor will review it — scores appear after review.'}</div></div>`;
+  else if (ph === 'soon') body = `<div class="banner">${icon('schedule')}<div class="grow">The exam opens at <b>${fmtTime(a.examStart.slice(11, 16))}</b> on ${fmtDate(a.examStart.slice(0, 10))}. Refresh this page when it is time.</div><button class="btn tonal" data-act="refresh">${icon('refresh')} Refresh</button></div>${rules}`;
+  else if (ph === 'closed') body = `<div class="banner warn">${icon('lock_clock')}<div class="grow">This exam closed at ${fmtTime(a.examEnd.slice(11, 16))}.</div></div>`;
+  else body = `${sub && sub.status === 'rework' ? `<div class="banner warn">${icon('replay')}<div class="grow">Your instructor reopened this exam for you: ${rich(sub.comment)}</div></div>` : ''}
+    <div class="h3">Before you start</div>${rules}
+    <div class="row end" style="margin-top:16px"><button class="btn filled" data-act="startExam" data-id="${esc(a.id)}">${icon('play_arrow')} Start exam</button></div>`;
+  return `<div class="col"><div class="card exam-gate">${body}</div>${subs.length ? mySubmissionsCard(subs) : ''}</div>`;
+}
+
+/* ---------- exam takeover ---------- */
+function stopExam() {
+  if (!S.exam) return;
+  clearInterval(S.exam.timer);
+  document.removeEventListener('fullscreenchange', S.exam.onFs);
+  S.exam = null;
+  try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) { /* ignore */ }
+}
+async function startExam(id) {
+  try { if (document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); } catch (e) { /* ignore */ }
+  let fresh;
+  try { fresh = await call('bootstrap'); } catch (e) { return toast(e.message, true); }
+  S.data = fresh;
+  const a = (S.data.assignments || []).find(x => x.id === id);
+  if (!a || examPhase(a) !== 'open') { try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) { /* ignore */ } render(); return toast('This exam is not open right now.', true); }
+  const skew = istMs(S.data.serverNow) - Date.now();
+  const key = labKey('x', a.id);
+  const ex = S.exam = { id: a.id, key, end: istMs(a.examEnd), skew, submitting: false, overlay: null };
+  const lab = getLab(key, {
+    exam: true, title: 'exam.py', tests: a.tests || [], submitLabel: 'Submit exam',
+    starter: '# ' + a.title + '\n# Type your answer below.\n\n',
+    onSubmit: p => submitExam(p),
+    onAway: n => {
+      if (!S.exam) return;
+      const max = +a.maxSwitches || 0;
+      if (max > 0 && n > max) { submitExam(null, 'left the exam window ' + n + ' times'); return; }
+      showExamOverlay('away', n, max);
+    }
+  });
+  ex.onFs = () => {
+    if (!S.exam || S.exam.submitting) return;
+    if (!document.fullscreenElement) { lab.noteFullscreenExit(); showExamOverlay('fs'); }
+  };
+  document.addEventListener('fullscreenchange', ex.onFs);
+  ex.timer = setInterval(examTick, 1000);
+  render();
+  examTick();
+  setTimeout(() => lab.focus(), 100);
+}
+function examLeft() { return S.exam ? S.exam.end - (Date.now() + S.exam.skew) : 0; }
+function fmtLeft(ms) {
+  const t = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : String(m)) + ':' + String(sec).padStart(2, '0');
+}
+function examTick() {
+  if (!S.exam) return;
+  const left = examLeft(), el = $('#exam-timer');
+  if (el) {
+    el.querySelector('span:last-child').textContent = fmtLeft(left);
+    el.className = 'exam-timer' + (left < 60000 ? ' danger' : left < 300000 ? ' warn' : '');
+  }
+  const sw = $('#exam-switches'), lab = S.labs[S.exam.key];
+  if (sw && lab) sw.textContent = lab.integ.tabSwitches;
+  if (left <= 0 && !S.exam.submitting) submitExam(null, 'time up');
+}
+function renderExam() {
+  const ex = S.exam, a = (S.data.assignments || []).find(x => x.id === ex.id);
+  S.mounted = null;
+  if (!a) { stopExam(); return render(); }
+  const max = +a.maxSwitches || 0;
+  $('#app').innerHTML = `<div class="exam-wrap">
+    <div class="exam-top">${logo()}<div class="grow"><div class="exam-title">${esc(a.title)}</div><div class="small muted">${esc(S.data.user.name)} · ends ${fmtTime(a.examEnd.slice(11, 16))}</div></div>
+      <span class="pill ${max ? 'amber' : ''}" title="Times you left the exam window">${icon('tab_unselected')} Left window: <b id="exam-switches" style="margin-left:4px">0</b>${max ? ' / ' + max : ''}</span>
+      <span class="exam-timer" id="exam-timer">${icon('timer')}<span>${fmtLeft(examLeft())}</span></span>
+    </div>
+    <div class="exam-main">
+      <div class="exam-q"><div class="h3" style="margin-bottom:8px">${icon('quiz')} Question</div><div>${rich(a.description) || '<span class="muted">Write the program described by your instructor.</span>'}</div>
+        ${a.tests && a.tests.length ? `<div class="outcomes" style="margin-top:14px">${icon('fact_check')}<div>Your program is checked against <b>${plural(a.tests.length, 'test')}</b> when you submit. Use <b>Check</b> to run them (results are hidden).</div></div>` : ''}
+      </div>
+      ${labMount(ex.key)}
+    </div></div>`;
+  afterRender($('#app'));
+  if (ex.overlay) showExamOverlay(ex.overlay.kind, ex.overlay.n, ex.overlay.max);
+}
+function showExamOverlay(kind, n, max) {
+  if (!S.exam) return;
+  S.exam.overlay = { kind, n, max };
+  let o = $('#exam-overlay');
+  if (!o) { o = document.createElement('div'); o.id = 'exam-overlay'; o.className = 'exam-overlay'; document.body.appendChild(o); }
+  o.innerHTML = `<div class="box">${icon(kind === 'fs' ? 'fullscreen_exit' : 'warning')}
+    <h2>${kind === 'fs' ? 'You left full screen' : 'You left the exam window'}</h2>
+    <p class="muted">${kind === 'fs' ? 'This has been recorded. Go back to full screen to continue.' : 'This has been recorded (' + n + (max ? ' of ' + max + ' allowed' : '') + ').' + (max && n >= max ? ' <b>One more time and your exam is submitted automatically.</b>' : '')}</p>
+    <button class="btn filled" data-act="examResume">${icon('fullscreen')} Return to the exam</button></div>`;
+}
+function hideExamOverlay() { const o = $('#exam-overlay'); if (o) o.remove(); if (S.exam) S.exam.overlay = null; }
+async function submitExam(p, auto) {
+  const ex = S.exam;
+  if (!ex || ex.submitting) return;
+  const lab = S.labs[ex.key];
+  if (!p) {
+    if (ex.autoPending) return;
+    ex.autoPending = true;
+    hideExamOverlay();
+    toast(auto === 'time up' ? "Time's up — submitting your exam…" : 'You left the exam window too many times — submitting…', auto !== 'time up');
+    return lab.submit(auto);
+  }
+  if (!p.auto && !(await confirmDialog('Submit your exam?', 'You cannot change your answer after submitting.', 'Submit exam'))) return;
+  ex.submitting = true;
+  const r = await act('submitAssignment', { assignmentId: ex.id, type: 'lab', code: p.code, testOutputs: p.testOutputs, integrity: p.integrity }, { noRender: true });
+  if (!r) {
+    ex.submitting = false;
+    if (p.auto) toast('Could not submit — check your connection. Your code is saved; press Submit exam to try again.', true);
+    return;
+  }
+  lab.clearSaved();
+  const key = ex.key;
+  hideExamOverlay();
+  stopExam();
+  destroyLab(key);
+  S.view = 'assignments'; S.sub.assignment = ex.id;
+  render();
+}
+
+/* ---------- Student: Python Lab playground ---------- */
+V.lab = () => {
+  getLab(labKey('play', 'main'), { title: 'playground.py', preload: true,
+    starter: '# Python Lab — try anything here. Nothing is submitted.\nname = input("Your name: ")\nprint(f"Hello, {name}!")\n' });
+  return `<div class="page-head"><div><h1 class="h1">Python Lab</h1><p class="muted">Write and run Python right in your browser. Practice here — nothing is submitted or graded.</p></div></div>
+    ${labMount(labKey('play', 'main'))}`;
+};
+
+/* ---------- Instructor: Lab results in a submission ---------- */
+function integrityPanel(x) {
+  if (!x) return '';
+  const mins = s => s >= 60 ? Math.round(s / 60) + ' min' : s + ' s';
+  const stat = (v, l, bad) => `<div class="integ-stat ${bad ? 'bad' : ''}"><b>${v}</b><span>${l}</span></div>`;
+  const tl = x.timeline || [];
+  const peak = Math.max(1, ...tl);
+  return `<div class="card" style="margin-top:14px;padding:14px 16px"><div class="h3">${icon('shield')} Integrity</div>
+    ${x.flags && x.flags.length ? `<div class="flag-list">${x.flags.map(f => `<div class="flag-item">${icon('flag')} ${esc(f)}</div>`).join('')}</div>` : `<div class="banner ok" style="margin:8px 0">${icon('verified_user')}<div class="grow">No integrity flags. Typed normally.</div></div>`}
+    <div class="integ-grid">
+      ${stat(x.typed, 'characters typed')}${stat(x.deleted, 'characters deleted')}
+      ${stat(x.maxBurst, 'largest single insert', x.maxBurst >= 40)}${stat(x.pasteBlocked, 'paste attempts', x.pasteBlocked > 0)}
+      ${stat(x.tabSwitches, 'left the window', x.tabSwitches > 3)}${stat(x.fsExits || 0, 'full-screen exits', x.fsExits > 0)}
+      ${stat(x.runs, 'runs')}${stat(x.errors, 'runs with errors')}
+      ${stat(mins(x.activeSec), 'active typing time')}${stat(mins(x.totalSec), 'time in the Lab')}
+    </div>
+    ${tl.length > 1 ? `<div class="small muted" style="margin-top:8px">Typing activity (characters per 30 s)</div><div class="spark">${tl.map(v => `<i class="${v >= 200 ? 'hi' : ''}" style="height:${Math.max(2, Math.round(v / peak * 100))}%" title="${v}"></i>`).join('')}</div>` : ''}
+  </div>`;
+}
+function testsTable(tests, results) {
+  if (!tests || !tests.length) return '';
+  return `<div class="table-wrap" style="margin-top:14px"><table class="table tests-table"><thead><tr><th style="width:40px"></th><th>Input</th><th>Expected (contains)</th><th>Student output</th></tr></thead><tbody>
+    ${tests.map((t, i) => { const r = (results || [])[i] || {}; return `<tr><td>${icon(r.ok ? 'check_circle' : 'cancel', r.ok ? 'fill' : '')}</td>
+      <td><pre>${esc(t.input || '—')}</pre>${t.hidden ? pill('hidden') : ''}</td><td><pre>${esc(t.expect)}</pre></td><td><pre>${esc(r.output || '(nothing)')}</pre></td></tr>`; }).join('')}
+  </tbody></table></div>`;
 }
 
 /* ---------- Materials (student + admin) ---------- */
@@ -861,7 +1112,7 @@ V.review = () => {
       <td><div class="row" style="flex-wrap:nowrap">${avatar(s.studentName)}<span style="font-weight:500">${esc(s.studentName)}</span></div></td>
       <td><div>${esc(s.assignmentTitle)}</div><div class="small muted mono" style="max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((s.preview || '').split('\n')[0])}</div></td>
       <td class="hide-sm small">${fmtDT(s.submittedAt)} ${s.late === 'TRUE' ? pill('Late', 'red') : ''}</td>
-      <td>${statusPill(s.status)}</td></tr>`).join('')}
+      <td><div class="row" style="gap:4px">${statusPill(s.status)}${s.testScore ? scorePill(s.testScore) : ''}${s.flags && s.flags.length ? `<span title="${esc(s.flags.join('\n'))}">${pill('Flagged', 'red', 'flag')}</span>` : ''}</div></td></tr>`).join('')}
   </tbody></table></div>` : emptyState('inbox', f === 'submitted' ? 'Nothing waiting for review.' : 'No submissions match.')}`;
 };
 async function reviewDialog(id) {
@@ -870,10 +1121,11 @@ async function reviewDialog(id) {
   const meta = S.data.submissions.find(x => x.id === id) || {};
   const a = S.data.assignments.find(x => x.id === s.assignmentId);
   openDialog(meta.studentName + ' · ' + (meta.assignmentTitle || 'Submission'), `<form data-form="review" data-id="${esc(id)}"><div class="dialog-body">
-    <div class="row" style="margin-bottom:10px">${statusPill(s.status)}${s.late === 'TRUE' ? pill('Late', 'red') : ''}<span class="muted small">${fmtDT(s.submittedAt)} · ${esc(s.fileName)} · ${s.type === 'file' ? 'uploaded file' : 'pasted code'}</span>
+    <div class="row" style="margin-bottom:10px">${statusPill(s.status)}${s.late === 'TRUE' ? pill('Late', 'red') : ''}<span class="muted small">${fmtDT(s.submittedAt)} · ${esc(s.fileName)} · ${s.type === 'file' ? 'uploaded file' : s.type === 'lab' ? 'typed in CodeTrack Lab' : 'pasted code'}</span>${s.testScore ? scorePill(s.testScore) : ''}
       ${s.fileUrl ? `<a class="btn text sm" href="${esc(s.fileUrl)}" target="_blank" rel="noopener">${icon('open_in_new')} Open in Drive</a>` : ''}</div>
     ${a && a.description ? `<details style="margin-bottom:10px"><summary class="small muted" style="cursor:pointer">Assignment instructions</summary><div class="small" style="padding:8px 0">${rich(a.description)}</div></details>` : ''}
     <pre class="code"><code class="language-python">${esc(s.code)}</code></pre>
+    ${s.type === 'lab' ? testsTable(s.tests, s.testResults) + integrityPanel(s.integrity) : ''}
     <div style="margin-top:16px">${field('comment', 'Comment for the student', s.comment, { textarea: true, rows: 3, hint: 'Required when sending back for rework.' })}</div>
   </div><div class="dialog-actions">
     <button type="button" class="btn text" data-act="closeDialog">Close</button>
@@ -925,7 +1177,7 @@ function sylAssignments() {
     <select class="input-inline" data-change="saTrack" aria-label="Track"><option value="all">All tracks</option><option value="common" ${tf === 'common' ? 'selected' : ''}>Common</option>${d.tracks.map(x => `<option value="${esc(x.id)}" ${x.id === tf ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
     <button class="btn filled" data-act="editAssignment">${icon('add')} New assignment</button></div>
   <div class="table-wrap"><table class="table"><thead><tr><th>Assignment</th><th class="hide-sm">Lesson</th><th>Due</th><th class="hide-sm">Submissions</th><th></th></tr></thead><tbody>
-    ${list.map(a => { const day = adminDay(a.dayId); return `<tr style="${a.active === 'TRUE' ? '' : 'opacity:.5'}"><td><div style="font-weight:500">${esc(a.title)}</div><div>${trackPill(a.track)}${a.active === 'TRUE' ? '' : ' ' + pill('Inactive')}</div></td>
+    ${list.map(a => { const day = adminDay(a.dayId); return `<tr style="${a.active === 'TRUE' ? '' : 'opacity:.5'}"><td><div style="font-weight:500">${esc(a.title)}</div><div>${trackPill(a.track)}${a.mode === 'lab' ? ' ' + pill('Lab', 'teal', 'terminal') : a.mode === 'exam' ? ' ' + pill('Exam', 'violet', 'timer') : ''}${a.active === 'TRUE' ? '' : ' ' + pill('Inactive')}</div></td>
       <td class="hide-sm small">${day ? 'Day ' + day.day + ' · ' + esc(day.title) : '—'}</td><td class="small">${a.due ? fmtDT(a.due) : '—'}</td><td class="hide-sm">${cnt(a.id)}</td>
       <td style="text-align:right;white-space:nowrap"><button class="icon-btn sm" data-act="editAssignment" data-id="${esc(a.id)}" title="Edit">${icon('edit')}</button><button class="icon-btn sm" data-act="deleteAssignment" data-id="${esc(a.id)}" title="Delete">${icon('delete')}</button></td></tr>`; }).join('')}
   </tbody></table></div>`;
@@ -968,8 +1220,110 @@ function assignmentDialog(id) {
     ${field('title', 'Title', a ? a.title : '', { required: true })}
     ${field('description', 'Instructions', a ? a.description : '', { textarea: true, rows: 6 })}
     ${field('due', 'Due', a ? a.due : '', { type: 'datetime-local' })}
+    ${labFieldsHtml(a)}
     ${switchField('active', 'Active (visible to students)', a ? a.active === 'TRUE' : true)}`,
     'Save', `data-id="${a ? esc(a.id) : ''}"`, true);
+}
+
+function labFieldsHtml(a) {
+  const mode = (a && a.mode) || 'submit';
+  let tests = [];
+  try { tests = a && a.tests ? JSON.parse(a.tests) : []; } catch (e) { tests = []; }
+  if (!tests.length) tests = [{ input: '', expect: '', hidden: false }];
+  return `${selectField('mode', 'How students submit', [
+      { value: 'submit', label: 'Paste code or upload a file' },
+      { value: 'lab', label: 'CodeTrack Lab — type only, auto-checked tests' },
+      { value: 'exam', label: 'Lab exam — timed, full screen, one attempt' }], mode, { attrs: 'data-change="amode"' })}
+    <div class="lab-section ${mode === 'submit' ? 'hidden' : ''}" data-sec="lab">
+      <div class="h3" style="font-size:15px">Test cases</div>
+      <p class="small muted" style="margin:4px 0 10px">Each test sends the input lines to <code>input()</code> and passes when the output contains the expected text (case and spacing ignored). Hidden tests never show their expected output to students.</p>
+      <div id="tests-box">${tests.map(testRowHtml).join('')}</div>
+      <button type="button" class="btn text sm" data-act="addTest" style="margin:0 0 10px -10px">${icon('add')} Add test</button>
+      ${field('maxSwitches', 'Allowed tab switches', a && a.maxSwitches !== undefined && a.maxSwitches !== '' ? a.maxSwitches : 3, { type: 'number', attrs: 'min="0" max="20"', hint: 'More than this is flagged. In exams, going over submits automatically. 0 = flag every switch, never auto-submit.' })}
+      <div class="row ${mode === 'exam' ? '' : 'hidden'}" data-sec="exam" style="gap:12px;align-items:flex-start">
+        ${field('examStart', 'Exam opens', a ? a.examStart : '', { type: 'datetime-local', cls: 'grow' })}
+        ${field('examEnd', 'Exam closes (auto-submit)', a ? a.examEnd : '', { type: 'datetime-local', cls: 'grow' })}
+      </div>
+    </div>`;
+}
+function testRowHtml(t) {
+  t = t || {};
+  return `<div class="test-row"><textarea class="t-in" placeholder="Input (one value per line)" spellcheck="false">${esc(t.input || '')}</textarea>
+    <textarea class="t-exp" placeholder="Expected output contains…" spellcheck="false">${esc(t.expect || '')}</textarea>
+    <label><input type="checkbox" class="t-hid" ${t.hidden ? 'checked' : ''}> Hidden</label>
+    <button type="button" class="icon-btn sm" data-act="delTest" title="Remove test">${icon('delete')}</button></div>`;
+}
+
+
+/* ---------- Admin: exams (marking) ---------- */
+V.exams = () => {
+  const d = S.data, ex = d.exams || [];
+  const att = d.examAttempts || [];
+  const fx = S.sub.xmFilter || '';
+  const list = att.filter(a => !fx || a.examId === fx);
+  const exTitle = id => { const e = ex.find(x => x.id === id); return e ? e.title : '(deleted exam)'; };
+  const totalOf = id => { const e = ex.find(x => x.id === id); if (!e) return 0; return e.sections.reduce((t, s) => { const m = s.questions.map(q => +q.marks).sort((a, b) => b - a); return t + (s.pick ? m.slice(0, s.pick) : m).reduce((a, b) => a + b, 0); }, 0); };
+  return `<div class="page-head"><div><h1 class="h1">Exams</h1><p class="muted">Students take exams one section at a time from their home page. MCQs are marked automatically; you mark the rest here.</p></div>
+    <div class="row"><button class="btn outlined" data-act="xmJson">${icon('data_object')} New / import exam</button></div></div>
+  ${ex.length ? `<div class="list card" style="padding:6px 10px;margin-bottom:16px">${ex.map(e => `<div class="list-item">
+      <span class="lead-icon ${e.active ? 'green' : ''}">${icon('quiz')}</span>
+      <div class="grow"><div class="title">${esc(e.title)}</div><div class="meta">${totalOf(e.id)} marks · ${e.durationMin} min · ${e.sections.map(s => s.id).join(' · ')} · ${plural(att.filter(a => a.examId === e.id).length, 'attempt')}</div></div>
+      <label class="switch"><input type="checkbox" data-change="xmActive" data-id="${esc(e.id)}" ${e.active ? 'checked' : ''}><span class="track"></span><span class="small">${e.active ? 'Open' : 'Hidden'}</span></label>
+      <button class="icon-btn sm" data-act="xmJson" data-id="${esc(e.id)}" title="Edit JSON">${icon('edit')}</button></div>`).join('')}</div>`
+    : emptyState('quiz', 'No exams yet. Use "New / import exam" and paste the exam JSON.')}
+  ${att.length ? `<div class="row" style="margin-bottom:12px"><select class="input-inline" data-change="xmFilter"><option value="">All exams</option>${ex.map(e => `<option value="${esc(e.id)}" ${fx === e.id ? 'selected' : ''}>${esc(e.title)}</option>`).join('')}</select></div>
+  <div class="table-wrap"><table class="table"><thead><tr><th>Student</th><th>Status</th><th class="hide-sm">Started</th><th>MCQ</th><th>Total</th><th></th></tr></thead><tbody>
+    ${list.map(a => `<tr class="click" data-act="xmMark" data-id="${esc(a.id)}">
+      <td><div class="row" style="flex-wrap:nowrap">${avatar(a.studentName)}<div><div style="font-weight:500">${esc(a.studentName)}</div><div class="small muted">${esc(exTitle(a.examId))}</div></div></div></td>
+      <td><div class="row" style="gap:4px">${a.status === 'submitted' ? pill(a.graded ? 'Marked' : 'To mark', a.graded ? 'green' : 'amber', a.graded ? 'check_circle' : 'rate_review') : pill('In progress · section ' + (a.section + 1), 'blue', 'timer')}${a.flags.length ? `<span title="${esc(a.flags.join('\n'))}">${pill('Flagged', 'red', 'flag')}</span>` : ''}</div></td>
+      <td class="hide-sm small">${fmtDT(a.startedAt)}${a.submittedAt ? '<br><span class="muted">done ' + fmtTime(a.submittedAt.slice(11, 16)) + '</span>' : ''}</td>
+      <td><b>${a.autoScore}</b></td><td>${a.total === null ? '<span class="muted">—</span>' : `<b>${a.total}</b> <span class="muted small">/ ${totalOf(a.examId)}</span>`}</td>
+      <td style="text-align:right"><button class="icon-btn sm" data-act="xmReset" data-id="${esc(a.id)}" title="Delete attempt (lets the student retake)">${icon('restart_alt')}</button></td></tr>`).join('')}
+  </tbody></table></div>` : ''}`;
+};
+function cameraPanel(list) {
+  if (!list) return '';
+  const tally = {};
+  list.forEach(f => { tally[f.label] = (tally[f.label] || 0) + 1; });
+  return `<div class="card" style="margin-top:14px;padding:14px 16px"><div class="h3">${icon('photo_camera')} Camera &amp; microphone</div>
+    ${list.length ? `<div class="row" style="gap:6px;margin:8px 0">${Object.keys(tally).map(k => pill(k + ': ' + tally[k], 'amber')).join('')}</div>
+      <div class="cam-grid">${list.map(f => `<a class="cam-item" ${f.fileUrl ? `href="${esc(f.fileUrl)}" target="_blank" rel="noopener"` : ''}>${f.thumb ? `<img src="${esc(f.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="cam-noimg">${icon('no_photography')}</span>`}
+        <span><b>${esc(f.label)}</b><br>${f.at ? esc(new Date(f.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })) : ''}${f.section ? ' · Section ' + esc(f.section) : ''}</span></a>`).join('')}</div>`
+    : `<div class="banner ok" style="margin:8px 0">${icon('videocam')}<div class="grow">No camera or microphone flags.</div></div>`}
+  </div>`;
+}
+async function xmMarkDialog(id) {
+  let r;
+  try { r = await call('getExamAttempt', { id }); } catch (e) { return toast(e.message, true); }
+  const at = r.attempt, ex = r.exam;
+  if (!ex) return toast('The exam for this attempt was deleted.', true);
+  const mk = q => `<div class="field static" style="max-width:130px;margin:8px 0 0"><input type="number" name="m_${esc(q.id)}" min="0" max="${q.marks}" step="0.5" value="${at.marks[q.id] === undefined ? '' : at.marks[q.id]}" placeholder=" "><label>Marks / ${q.marks}</label></div>`;
+  const body = ex.sections.map(s => {
+    const qs = s.questions.map(q => {
+      const a = at.answers[q.id];
+      if (q.type === 'mcq') {
+        const ok = a === q.answer;
+        return `<div class="xm-mcq-row ${a === null || a === undefined ? 'skip' : ok ? 'ok' : 'bad'}"><b>${esc(q.id)}</b> ${a === null || a === undefined ? 'not answered' : esc(q.options[a])} ${ok ? icon('check', 'sm') : a === null || a === undefined ? '' : icon('close', 'sm') + ' <span class="muted">→ ' + esc(q.options[q.answer]) + '</span>'}</div>`;
+      }
+      const tr = at.testResults[q.id];
+      return `<div class="xm-ans"><div class="row between"><b>${esc(q.id)}${q.title ? ' · ' + esc(q.title) : ''}</b><span class="muted small">${q.marks} marks</span></div>
+        <div class="small muted" style="margin:2px 0 6px">${rich(q.text)}</div>
+        ${q.type === 'code' || q.mono ? `<pre class="code"><code class="language-python">${esc(a || '(no answer)')}</code></pre>` : `<div class="xm-ans-text">${a ? rich(a) : '<span class="muted">(no answer)</span>'}</div>`}
+        ${tr ? `<div class="row" style="gap:6px;margin-top:8px">${scorePill(tr.score)}${tr.results.map((t, i) => `<span class="pill ${t.ok ? 'green' : 'red'}" title="${esc(t.output)}">Test ${i + 1}: ${esc((q.tests[i] || {}).input || '').replace(/\n/g, ' / ')}</span>`).join('')}</div>` : ''}
+        ${q.key ? `<div class="outcomes" style="margin-top:8px">${icon('key')}<div><b>Key:</b> ${rich(q.key)}</div></div>` : ''}
+        ${mk(q)}</div>`;
+    }).join('');
+    const mcqs = s.questions.filter(q => q.type === 'mcq');
+    return `<div class="xm-mark-sec"><div class="h3">Section ${esc(s.id)} · ${esc(s.title)}${s.pick ? ' <span class="muted small">(best ' + s.pick + ' count)</span>' : ''}${mcqs.length ? ' · ' + pill(mcqs.filter(q => at.answers[q.id] === q.answer).length + '/' + mcqs.length + ' correct', 'blue') : ''}</div>
+      <div class="small muted" style="margin-bottom:8px">${at.sectionLog[s.id] ? 'Submitted ' + fmtTime(at.sectionLog[s.id].slice(11, 16)) : 'Not submitted'}</div>${qs}</div>`;
+  }).join('');
+  openDialog(at.studentName + ' · ' + ex.title, `<form data-form="xmMark" data-id="${esc(at.id)}"><div class="dialog-body">
+    <div class="row" style="margin-bottom:10px">${at.status === 'submitted' ? pill('Submitted', 'green', 'task_alt') : pill('In progress', 'blue', 'timer')}<span class="muted small">Started ${fmtDT(at.startedAt)}${at.submittedAt ? ' · submitted ' + fmtTime(at.submittedAt.slice(11, 16)) : ''} · MCQ auto-score <b>${at.autoScore}</b>${at.total !== null ? ' · total <b>' + at.total + '</b>' : ''}</span></div>
+    ${body}
+    ${cameraPanel(at.camera)}
+    ${integrityPanel(at.integrity)}
+    <div style="margin-top:16px">${field('comment', 'Comment (private note)', at.comment, { textarea: true, rows: 2 })}</div>
+  </div><div class="dialog-actions"><button type="button" class="btn text" data-act="closeDialog">Close</button><button class="btn filled">${icon('save')} Save marks</button></div></form>`, true);
 }
 
 /* ---------- Admin: students ---------- */
@@ -1126,7 +1480,8 @@ function welcomeStudent(firstTime) {
         <div class="tour-step"><span class="tour-n">2</span><div><b>Submit your work</b><div class="small muted">Open an assignment, paste your code or upload a .py file. Your instructor approves it or leaves a comment.</div></div></div>
         <div class="tour-step"><span class="tour-n">3</span><div><b>Show up & earn points</b><div class="small muted">Tap "I'm here" between ${fmtTime(d.settings.checkinStart)} and ${fmtTime(d.settings.checkinEnd)}. Points for every day, submission and reflection.</div></div></div>
       </div></div>` : '';
-  return `<div class="welcome-grid">
+  const xmc = window.CTApp.exam ? window.CTApp.exam.examCards(true) : '';
+  return `${xmc ? `<div class="rise" style="--i:1;margin-bottom:14px">${xmc}</div>` : ''}<div class="welcome-grid">
       ${welcomeCard(1, 'menu_book', 'blue', f.label === 'Today' ? "Today's lesson" : f.label || 'Lesson', day ? 'Day ' + esc(day.day) : '—', day ? esc(day.title) : 'No lesson published yet', 'plan')}
       ${welcomeCard(2, 'checklist', pendingToday.length ? 'amber' : 'green', 'Due today', pendingToday.length ? pendingToday.length + ' to do' : (dueToday.length ? 'All done' : 'Nothing'), allPending ? plural(allPending, 'pending task') + ' overall' : "You're all caught up", 'assignments')}
       ${welcomeCard(3, 'stars', 'violet', 'Points', st.points, (lb.myRank ? 'Rank #' + lb.myRank + ' of ' + lb.total : '') + (st.streak ? ' · ' + plural(st.streak, 'day') + ' streak' : ''), 'profile')}
@@ -1194,6 +1549,7 @@ const ACTIONS = {
       const s = await call('getSubmission', { id: el.dataset.id });
       openDialog(s.fileName || 'Submission', `<div class="dialog-body"><div class="row" style="margin-bottom:10px">${statusPill(s.status)}<span class="muted small">${fmtDT(s.submittedAt)}</span></div>
         <pre class="code"><code class="language-python">${esc(s.code)}</code></pre>
+        ${s.testResults && s.testResults.length ? `<div class="row" style="margin-top:12px;gap:6px">${s.testResults.map((r, i) => pill('Test ' + (i + 1) + (r.hidden ? ' (hidden)' : ''), r.ok ? 'green' : 'red', r.ok ? 'check' : 'close')).join('')}</div>` : ''}
         ${s.comment ? `<div class="outcomes">${icon('comment')}<div><b>Instructor:</b> ${rich(s.comment)}</div></div>` : ''}</div>
         <div class="dialog-actions"><button class="btn filled" data-act="closeDialog">Close</button></div>`, true);
     } catch (e) { toast(e.message, true); }
@@ -1205,7 +1561,30 @@ const ACTIONS = {
   previewFile: el => openDialog(el.dataset.name, `<div class="dialog-body" style="padding-bottom:20px"><iframe src="${DRIVE_FILE}${encodeURIComponent(el.dataset.id)}/preview" style="width:100%;height:70vh;border:0;border-radius:12px;background:var(--surface-2)" allow="autoplay"></iframe></div>`, true),
   materialsRefresh: () => loadMaterials(true),
 
+  startExam: el => startExam(el.dataset.id),
+  examResume: () => {
+    hideExamOverlay();
+    try { if (document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); } catch (e) { /* ignore */ }
+    if (S.exam && S.labs[S.exam.key]) S.labs[S.exam.key].focus();
+  },
+
+  // admin: exams
+  xmMark: (el, e) => { if (e.target.closest('[data-act="xmReset"]')) return; xmMarkDialog(el.dataset.id); },
+  xmReset: async el => {
+    const a = (S.data.examAttempts || []).find(x => x.id === el.dataset.id);
+    if (a && await confirmDialog('Delete ' + esc(a.studentName) + "'s attempt?", 'All their answers for this exam are removed and they can take it again.', 'Delete attempt', true)) act('resetExamAttempt', { id: a.id });
+  },
+  xmJson: async el => {
+    let text = '';
+    if (el.dataset.id) { try { text = await call('exportExam', { id: el.dataset.id }); } catch (e) { return toast(e.message, true); } }
+    formDialog(el.dataset.id ? 'Edit exam JSON' : 'New exam from JSON', 'xmSave',
+      `<p class="small muted" style="margin-top:0">Sections hold questions of type <code>mcq</code> (options + answer index), <code>text</code> (written, with an optional <code>key</code>) or <code>code</code> (tests: input → expected lines). Keep the same <code>id</code> to update an exam.</p>` +
+      field('json', 'Exam JSON', text, { textarea: true, rows: 16, required: true, attrs: 'spellcheck="false" style="font-family:var(--mono);font-size:12px"' }), 'Save exam', '', true);
+  },
+
   // admin
+  addTest: () => { const b = $('#tests-box'); if (b) { b.insertAdjacentHTML('beforeend', testRowHtml()); $$('.t-in', b).pop().focus(); } },
+  delTest: el => { const r = el.closest('.test-row'); if (r) r.remove(); },
   studentDetail: el => studentDetailDialog(el.dataset.id),
   publishWeek: el => act('saveWeek', { week: el.dataset.week, published: el.dataset.on === '1' }),
   att: el => act('markAttendance', { date: S.sub.attDate || S.data.today, userId: el.dataset.user, status: el.dataset.status }),
@@ -1295,6 +1674,13 @@ const CHANGES = {
     r.onerror = () => toast('Could not read that file.', true);
     r.readAsText(f);
   },
+  xmActive: el => act('saveExam', { id: el.dataset.id, active: el.checked }),
+  xmFilter: el => { S.sub.xmFilter = el.value; renderPage(); },
+  amode: el => {
+    const f = el.closest('form');
+    $('[data-sec="lab"]', f).classList.toggle('hidden', el.value === 'submit');
+    $('[data-sec="exam"]', f).classList.toggle('hidden', el.value !== 'exam');
+  },
   attDate: el => { S.sub.attDate = el.value || S.data.today; renderPage(); },
   rassign: el => { S.sub.rassign = el.value; renderPage(); },
   rstudent: el => { S.sub.rstudent = el.value; renderPage(); },
@@ -1324,10 +1710,10 @@ const FORMS = {
       const r = await call('login', { username: v.username, password: v.password });
       S.token = r.token; store(LS_KEY, r.token);
       S.data = r.state; S.view = defaultView(); S.mounted = null;
-      S.welcome = true;
+      S.welcome = !(EXAM_ONLY && r.state.role === 'student');
       render();
     } catch (e) {
-      err.querySelector('span').textContent = e.message;
+      err.querySelector('span:not(.msi)').textContent = /^Wrong name or password/.test(e.message) ? e.message + ' Passwords are case-sensitive (e.g. capital first letter).' : e.message;
       err.classList.remove('hidden');
     }
   },
@@ -1361,7 +1747,20 @@ const FORMS = {
     if (v.id) v.track = f.dataset.track;
     if (await act('saveDay', v)) closeDialog();
   },
-  saveAssignment: async (v, f) => { v.id = f.dataset.id || ''; if (await act('saveAssignment', v)) closeDialog(); },
+  saveAssignment: async (v, f) => {
+    v.id = f.dataset.id || '';
+    if (v.mode && v.mode !== 'submit') {
+      v.tests = JSON.stringify($$('.test-row', f).map(r => ({ input: $('.t-in', r).value, expect: $('.t-exp', r).value.trim(), hidden: $('.t-hid', r).checked }))
+        .filter(t => t.input.trim() || t.expect));
+    }
+    if (await act('saveAssignment', v)) closeDialog();
+  },
+  xmSave: async v => { if (await act('saveExam', { json: v.json })) closeDialog(); },
+  xmMark: async (v, f) => {
+    const marks = {};
+    Object.keys(v).forEach(k => { if (k.indexOf('m_') === 0 && String(v[k]).trim() !== '') marks[k.slice(2)] = +v[k]; });
+    if (await act('gradeExamAttempt', { id: f.dataset.id, marks, comment: v.comment })) closeDialog();
+  },
   saveStudent: async (v, f) => { v.id = f.dataset.id || ''; if (await act('saveStudent', v)) closeDialog(); },
   bulkStudents: async v => { if (await act('bulkAddStudents', v)) closeDialog(); },
   bonus: async (v, f) => { if (await act('awardBonus', { userId: f.dataset.id, points: v.points, reason: v.reason })) closeDialog(); },
@@ -1408,6 +1807,7 @@ document.addEventListener('toggle', e => {
   if (d.matches && d.matches('details.day')) { if (d.open) S.openDays.add(d.dataset.id); else S.openDays.delete(d.dataset.id); }
 }, true);
 document.addEventListener('keydown', e => {
+  if (S.exam && e.key === 'Escape') return;
   if (S.welcome && (e.key === 'Escape') && !$('#dialog-root').innerHTML) { leaveWelcome(); return; }
   if (e.key === 'Escape') { if ($('#menu')) closeMenu(); else if ($('#dialog-root').innerHTML) { if (S._confirm) ACTIONS.confirmNo(); else closeDialog(); } closeNav(); }
   if (e.key === 'Tab' && e.target.matches && e.target.matches('textarea.code-input')) {
@@ -1425,10 +1825,12 @@ setInterval(() => {
   if (!S.data || document.hidden || S.loading) return;
   const a = document.activeElement;
   if ($('#dialog-root').innerHTML || (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName))) return;
-  if (S.view === 'assignments' && S.sub.assignment) return;
+  if (S.exam || S.xm || S.view === 'lab' || S.view === 'exams' || (S.view === 'assignments' && S.sub.assignment)) return;
   refresh(true);
 }, 120000);
 
 if (window.hljs) { try { hljs.configure({ ignoreUnescapedHTML: true }); } catch (e) { /* ignore */ } }
+window.CTApp = { S, $, $$, esc, icon, rich, pill, toast, call, act, render, confirmDialog, store, load, plural, first, fmtDT, fmtTime, fmtDate,
+  emptyState, avatar, ACTIONS, CHANGES, INPUTS, labKey, getLab, destroyLab, labMount, afterRender };
 boot();
 })();
