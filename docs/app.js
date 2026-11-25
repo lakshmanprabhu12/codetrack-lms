@@ -1287,7 +1287,7 @@ function cameraPanel(list) {
   list.forEach(f => { tally[f.label] = (tally[f.label] || 0) + 1; });
   return `<div class="card" style="margin-top:14px;padding:14px 16px"><div class="h3">${icon('photo_camera')} Camera &amp; microphone</div>
     ${list.length ? `<div class="row" style="gap:6px;margin:8px 0">${Object.keys(tally).map(k => pill(k + ': ' + tally[k], 'amber')).join('')}</div>
-      <div class="cam-grid">${list.map(f => `<a class="cam-item" ${f.fileUrl ? `href="${esc(f.fileUrl)}" target="_blank" rel="noopener"` : ''}>${f.thumb ? `<img src="${esc(f.thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="cam-noimg">${icon('no_photography')}</span>`}
+      <div class="cam-grid">${list.map(f => `<a class="cam-item" ${f.fileUrl ? `href="${esc(f.fileUrl)}" target="_blank" rel="noopener"` : ''}>${f.thumb ? (/^data:image\/jpeg;base64,/.test(f.thumb) ? `<img src="${esc(f.thumb)}" alt="">` : `<img alt="" data-proctor="${esc(String(f.thumb).replace(/^proctor:/, ''))}">`) : `<span class="cam-noimg">${icon('no_photography')}</span>`}
         <span><b>${esc(f.label)}</b><br>${f.at ? esc(new Date(f.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })) : ''}${f.section ? ' · Section ' + esc(f.section) : ''}</span></a>`).join('')}</div>`
     : `<div class="banner ok" style="margin:8px 0">${icon('videocam')}<div class="grow">No camera or microphone flags.</div></div>`}
   </div>`;
@@ -1324,6 +1324,19 @@ async function xmMarkDialog(id) {
     ${integrityPanel(at.integrity)}
     <div style="margin-top:16px">${field('comment', 'Comment (private note)', at.comment, { textarea: true, rows: 2 })}</div>
   </div><div class="dialog-actions"><button type="button" class="btn text" data-act="closeDialog">Close</button><button class="btn filled">${icon('save')} Save marks</button></div></form>`, true);
+  loadProctorImages();
+}
+async function loadProctorImages() {
+  const queue = $$('img[data-proctor]', $('#dialog-root'));
+  const worker = async () => {
+    while (queue.length) {
+      const img = queue.shift();
+      if (!document.body.contains(img)) return;                   // dialog closed
+      try { img.src = await call('proctorImage', { fileId: img.dataset.proctor }); }
+      catch (e) { img.replaceWith(Object.assign(document.createElement('span'), { className: 'cam-noimg', textContent: 'Photo unavailable' })); }
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);   // a few at a time: each Apps Script call takes ~1 s
 }
 
 /* ---------- Admin: students ---------- */

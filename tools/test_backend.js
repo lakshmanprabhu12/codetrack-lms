@@ -353,8 +353,24 @@ else {
   A('proctorFlag', Y, { examId: e.id, type: 'noFace', label: 'No face in view', section: 'A', at: '2026-11-26T04:06:00.000Z', img: 'data:text/html;base64,PHNjcmlwdD4=' });
   const aid2 = must('bootstrap', T).examAttempts[0].id;
   const ga2 = must('getExamAttempt', T, { id: aid2 });
-  ok(ga2.attempt.camera.length === 2 && /thumbnail\?id=/.test(ga2.attempt.camera[0].thumb) && ga2.attempt.camera[1].thumb === '', 'camera flags listed, only real JPEGs saved: ' + JSON.stringify(ga2.attempt.camera.map(c => c.type)));
+  ok(ga2.attempt.camera.length === 2 && /^proctor:/.test(ga2.attempt.camera[0].thumb) && ga2.attempt.camera[1].thumb === '', 'camera flags listed, only real JPEGs saved: ' + JSON.stringify(ga2.attempt.camera.map(c => c.type)));
   ok(rows_('ProctorFlags').length === 2, 'ProctorFlags sheet rows');
+  // real JPEG round trip: bytes in Drive == bytes from the camera; served back identically
+  const jpg = fs.readFileSync('/tmp/face_check.jpg');
+  const jpgUrl = 'data:image/jpeg;base64,' + jpg.toString('base64');
+  ok(jpgUrl.length < 400000, 'snapshot size ok: ' + jpgUrl.length);
+  must('proctorFlag', Y, { examId: e.id, type: 'away', label: 'Looking away from the screen', section: 'B', at: '2026-11-26T04:07:00.000Z', img: jpgUrl });
+  const pf = rows_('ProctorFlags').find(f => f.type === 'away');
+  const file = DriveApp.getFileById(pf.fileId);
+  const stored = Buffer.from(file.getBlob().getBytes().map(b => b & 255));
+  ok(stored.equals(jpg) && stored[0] === 0xFF && stored[1] === 0xD8, 'Drive file is byte-identical JPEG (' + stored.length + ' bytes)');
+  ok(file.getName().endsWith('_away.jpg') && file._parent.getName() === 'Exam camera flags' && file._parent._parent.getName() === 'Priya Sharma (priya.sharma)', 'saved in <student>/Exam camera flags: ' + file.getName());
+  const g3 = must('getExamAttempt', T, { id: aid2 });
+  const camAway = g3.attempt.camera.find(c => c.type === 'away');
+  ok(camAway.thumb === 'proctor:' + pf.fileId && /drive.google.com/.test(camAway.fileUrl), 'marking data points to the photo');
+  ok(must('proctorImage', T, { fileId: pf.fileId }) === jpgUrl, 'proctorImage returns the identical photo');
+  ok(/Only the instructor/.test(err('proctorImage', Y, { fileId: pf.fileId })), 'students cannot fetch photos');
+  ok(/not found/.test(err('proctorImage', T, { fileId: 'someOtherDriveFile' })), 'only proctor photos can be fetched');
   // scheduled opening
   const sched = JSON.parse(JSON.stringify(paper)); sched.id = 'sched-1'; sched.opensAt = '2026-11-27T09:00';
   must('saveExam', T, { json: sched });

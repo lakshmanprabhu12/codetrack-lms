@@ -171,6 +171,7 @@ const ROUTES = {
   resetExamAttempt: { fn: resetExamAttempt_, write: true, admin: true },
   saveExam: { fn: saveExam_, write: true, admin: true },
   proctorFlag: { fn: proctorFlag_, write: true, student: true, noState: true },
+  proctorImage: { fn: proctorImage_, admin: true },
   exportExam: { fn: function (u, p) { const e = byId_('Exams', p.id); if (!e) throw new Error('Exam not found.'); return JSON.stringify(examObj_(e), null, 1); }, admin: true }
 };
 
@@ -1028,7 +1029,14 @@ function proctorFlag_(u, p) {
   });
   return '';
 }
-function proctorThumb_(fileId) { return fileId ? 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w400' : ''; }
+/* Photos are served through the script (as data URLs) so they show without relying on Google cookies in the browser. */
+function proctorThumb_(fileId) { return fileId ? 'proctor:' + fileId : ''; }
+function proctorImage_(_, p) {
+  const id = clean_(p.fileId, 100);
+  if (!rows_('ProctorFlags').some(function (f) { return f.fileId === id; })) throw new Error('Photo not found.');
+  const blob = DriveApp.getFileById(id).getBlob();
+  return 'data:image/jpeg;base64,' + Utilities.base64Encode(blob.getBytes());
+}
 
 function getExamAttempt_(_, p) {
   const at = byId_('ExamAttempts', p.id);

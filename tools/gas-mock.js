@@ -170,6 +170,7 @@
     this.getSize = () => String(content || '').length; this.getLastUpdated = () => new Date();
     this.getUrl = () => 'https://drive.google.com/file/d/' + id + '/view';
     this.moveTo = f => { this._parent = f; };
+    this.getBlob = () => ({ getBytes: () => (Array.isArray(this._content) ? this._content : Array.from(new TextEncoder().encode(String(this._content || '')))), getContentType: () => mime });
     items[id] = this;
   }
   const driveRoot = new Folder('My Drive', null);

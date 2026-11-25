@@ -27,8 +27,6 @@ const boot = `
   const KEEP = ['ExamAttempts', 'Sessions', 'Points', 'ProctorFlags', 'Submissions', 'Attendance', 'Progress'];
   try { const snap = JSON.parse(localStorage.getItem(KEY) || 'null'); if (snap) KEEP.forEach(n => { if (snap[n]) { const s = ss.getSheetByName(n); s._data = snap[n].data; s._maxRows = snap[n].maxRows; } }); } catch (e) { /* ignore */ }
   const persist = () => { try { const o = {}; KEEP.forEach(n => { const s = ss.getSheetByName(n); o[n] = { data: s._data, maxRows: s._maxRows }; }); localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) { /* ignore */ } };
-  // camera snapshots live in the mock Drive: show them as data URLs
-  proctorThumb_ = id => { try { const f = __drive.items[id]; return f ? 'data:image/jpeg;base64,' + Utilities.base64Encode(f._content) : ''; } catch (e) { return ''; } };
   window.CODETRACK_CONFIG = { apiUrl: 'https://script.google.com/macros/s/PREVIEW/exec', proctor: true, reviewPinHash: '${cfg}' };
   window.fetch = (function (realFetch) { return (url, opts) => {
     if (String(url).indexOf('script.google.com') < 0) return realFetch(url, opts);
