@@ -870,7 +870,7 @@ const EXAM = { GRACE_MIN: 3, TYPES: ['mcq', 'text', 'code'] };
 function examObj_(e) {
   return {
     id: e.id, title: e.title, description: e.description, durationMin: num_(e.durationMin) || 120,
-    maxExits: e.maxExits === '' || e.maxExits === undefined ? 5 : num_(e.maxExits), active: bool_(e.active), opensAt: e.opensAt || '', sections: parseJson_(e.sections, []), createdAt: e.createdAt, updatedAt: e.updatedAt
+    maxExits: e.maxExits === '' || e.maxExits === undefined ? 5 : num_(e.maxExits), active: bool_(e.active), opensAt: String(e.opensAt || '').replace(' ', 'T').slice(0, 16), sections: parseJson_(e.sections, []), createdAt: e.createdAt, updatedAt: e.updatedAt
   };
 }
 function examQuestions_(ex) {
