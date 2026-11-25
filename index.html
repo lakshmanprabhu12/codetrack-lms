@@ -6538,7 +6538,7 @@ const FORMS = {
       S.welcome = !(EXAM_ONLY && r.state.role === 'student');
       render();
     } catch (e) {
-      err.querySelector('span').textContent = e.message;
+      err.querySelector('span:not(.msi)').textContent = /^Wrong name or password/.test(e.message) ? e.message + ' Passwords are case-sensitive (e.g. capital first letter).' : e.message;
       err.classList.remove('hidden');
     }
   },
