@@ -44,7 +44,7 @@ const SCHEMA = {
   Submissions: ['id', 'assignmentId', 'userId', 'type', 'fileName', 'fileId', 'fileUrl', 'code', 'submittedAt', 'late', 'status', 'comment', 'reviewedAt', 'integrity', 'testScore', 'testResults'],
   Progress: ['userId', 'dayId', 'item', 'doneAt'],
   Attendance: ['id', 'date', 'userId', 'status', 'checkInAt', 'verifiedAt'],
-  Announcements: ['id', 'title', 'body', 'pinned', 'createdAt'],
+  Announcements: ['id', 'title', 'body', 'pinned', 'createdAt', 'userId', 'kind'],
   Doubts: ['id', 'userId', 'dayId', 'question', 'answer', 'shared', 'status', 'askedAt', 'answeredAt'],
   Reflections: ['id', 'userId', 'date', 'dayId', 'learned', 'stuck', 'confidence', 'createdAt', 'updatedAt'],
   Points: ['id', 'userId', 'key', 'points', 'reason', 'createdAt'],
@@ -701,6 +701,8 @@ function baseState_() {
 
 function studentState_(u) {
   const st = baseState_();
+  // announcements addressed to one student (e.g. report cards) are only sent to that student
+  st.announcements = st.announcements.filter(function (a) { return !a.userId || a.userId === u.id; });
   const today = st.today;
   const pub = publishedWeeks_();
   const t = myTrack_(u);
@@ -1849,8 +1851,14 @@ function exportSyllabus_() {
 
 function saveAnnouncement_(_, p) {
   const title = clean_(p.title, 150);
-  const body = clean_(p.body, 5000);
+  const kind = p.kind === 'report' ? 'report' : '';
+  const body = clean_(p.body, kind === 'report' ? 30000 : 5000);
   if (!title && !body) throw new Error('Write a title or a message.');
+  if (kind === 'report') {
+    try { JSON.parse(body); } catch (e) { throw new Error('A report card must be valid JSON.'); }
+  }
+  const userId = clean_(p.userId, 40);
+  if (userId && !byId_('Users', userId)) throw new Error('Student not found.');
   if (p.id) {
     const row = byId_('Announcements', p.id);
     if (!row) throw new Error('Announcement not found.');
@@ -1861,7 +1869,7 @@ function saveAnnouncement_(_, p) {
     update_('Announcements', row, patch);
     return 'Announcement updated.';
   }
-  insert_('Announcements', { id: uid_('n'), title: title, body: body, pinned: bool_(p.pinned) ? 'TRUE' : 'FALSE', createdAt: now_() });
+  insert_('Announcements', { id: uid_('n'), title: title, body: body, pinned: bool_(p.pinned) ? 'TRUE' : 'FALSE', createdAt: now_(), userId: userId, kind: kind });
   return 'Announcement posted.';
 }
 

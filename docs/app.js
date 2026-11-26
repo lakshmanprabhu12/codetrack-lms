@@ -413,6 +413,7 @@ V.dashboard = () => {
   return `
   <div class="page-head"><div><h1 class="h1">${greet()}, ${esc(first(d.user.name))}</h1>
     <p class="muted">${fmtDate(d.today)} · ${esc(d.settings.courseTitle)}${d.user.trackStatus === 'approved' ? ' · ' + esc(trackName(d.user.track)) : ''}</p></div></div>
+  ${myReportCards()}
   ${window.CTApp.exam ? window.CTApp.exam.examCards(false) : ''}
   ${trackBanner()}
   <div class="stats">
@@ -488,8 +489,52 @@ function focusCard(f) {
       </div>
     </div>`).join('');
 }
+/* ---------- Report cards (announcements of kind 'report', addressed to one student) ---------- */
+function parseReport(a) { try { return JSON.parse(a.body); } catch (e) { return null; } }
+function reportCard(a, opts) {
+  const r = parseReport(a);
+  if (!r) return '';
+  opts = opts || {};
+  const pct = Math.max(0, Math.min(100, Math.round(r.total / (r.max || 100) * 100)));
+  const C = 2 * Math.PI * 42;
+  const sec = (r.sections || []).map(s => {
+    const p = Math.round(s.score / s.max * 100);
+    return `<div class="rc-sec"><div class="rc-sec-l"><b>${esc(s.id)}</b><span>${esc(s.name)}</span></div>
+      <div class="rc-bar"><i style="width:${p}%" class="${p >= 75 ? 'hi' : p >= 50 ? 'mid' : 'lo'}"></i></div><div class="rc-sec-s"><b>${esc(String(s.score))}</b> / ${esc(String(s.max))}</div></div>`;
+  }).join('');
+  const mist = (r.mistakes || []).map((m, i) => `<div class="rc-mis">
+      <div class="rc-mis-h"><span class="rc-num">${i + 1}</span><div class="grow"><div class="rc-mis-t">${rich(m.title)}</div>${m.where ? `<div class="rc-where">${(m.where || '').split(',').map(w => `<span>${esc(w.trim())}</span>`).join('')}</div>` : ''}</div></div>
+      <div class="rc-mis-b">${rich(m.text)}</div>
+      ${m.wrong || m.right ? `<div class="rc-code">${m.wrong ? `<div class="bad"><div class="lbl">${icon('close', 'sm')} You wrote</div><pre>${esc(m.wrong)}</pre></div>` : ''}${m.right ? `<div class="good"><div class="lbl">${icon('check', 'sm')} Correct</div><pre>${esc(m.right)}</pre></div>` : ''}</div>` : ''}
+      ${m.tip ? `<div class="rc-tip">${icon('lightbulb', 'sm')}<span>${rich(m.tip)}</span></div>` : ''}
+    </div>`).join('');
+  return `<article class="rc" id="rc-${esc(a.id)}">
+    <header class="rc-head">
+      <div class="grow"><div class="rc-kicker">${icon('workspace_premium', 'sm')} Report card${opts.forName ? ' · ' + esc(opts.forName) : ''}</div>
+        <h2>${esc(r.exam || a.title)}</h2><div class="rc-sub">${esc(r.student || '')}${r.date ? ' · ' + esc(r.date) : ''}</div>
+        ${r.badge ? `<div class="rc-badge">${esc(r.badge)}</div>` : ''}</div>
+      <div class="rc-ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" class="tr"/><circle cx="50" cy="50" r="42" class="fg" stroke-dasharray="${(C * pct / 100).toFixed(1)} ${C.toFixed(1)}"/></svg>
+        <div><b>${esc(String(r.total))}</b><span>/ ${esc(String(r.max || 100))}</span></div></div>
+    </header>
+    <div class="rc-body">
+      <div class="rc-secs">${sec}</div>
+      ${r.message ? `<p class="rc-msg">${rich(r.message)}</p>` : ''}
+      <details class="rc-more" ${opts.open ? 'open' : ''}><summary>${icon('expand_more')} <span class="o">See what went well, your mistakes and how to fix them</span><span class="c">Hide details</span></summary>
+        <div class="rc-two">
+          <section class="rc-good"><h3>${icon('verified', 'sm')} What you did well</h3><ul>${(r.strengths || []).map(x => `<li>${rich(x)}</li>`).join('')}</ul></section>
+          <section class="rc-todo"><h3>${icon('flag', 'sm')} Before next week</h3><ol>${(r.todo || []).map(x => `<li>${rich(x)}</li>`).join('')}</ol></section>
+        </div>
+        <h3 class="rc-h">${icon('build', 'sm')} Mistakes &amp; how not to repeat them</h3>
+        ${mist}
+        ${r.closing ? `<div class="rc-close">${rich(r.closing)}</div>` : ''}
+      </details>
+    </div></article>`;
+}
+function myReportCards() {
+  return (S.data.announcements || []).filter(a => a.kind === 'report').map(a => reportCard(a)).join('');
+}
 function announcementsCard(limit) {
-  const list = (S.data.announcements || []).slice(0, limit || 99);
+  const list = (S.data.announcements || []).filter(a => a.kind !== 'report').slice(0, limit || 99);
   return `<div class="card"><div class="card-head"><div class="h3">${icon('campaign')} Announcements</div></div>
     ${list.length ? list.map(a => `<div class="ann"><div class="t">${a.pinned === 'TRUE' ? icon('push_pin', 'sm fill') : ''}${esc(a.title || 'Announcement')}</div>
       ${a.body ? `<div class="b">${rich(a.body)}</div>` : ''}<div class="small muted" style="margin-top:4px">${fmtDT(a.createdAt)}</div></div>`).join('')
@@ -1379,9 +1424,9 @@ V.announce = () => {
     <form data-form="announce">${field('title', 'Title', '', {})}${field('body', 'Message', '', { textarea: true, rows: 5 })}${switchField('pinned', 'Pin to top', false)}
     <div class="row end"><button class="btn filled">${icon('send')} Post</button></div></form></div></div>
   <div class="col"><div class="card"><div class="card-head"><div class="h3">${icon('history')} Posted</div></div>
-    ${list.length ? list.map(a => `<div class="ann"><div class="row between" style="flex-wrap:nowrap"><div class="t">${a.pinned === 'TRUE' ? icon('push_pin', 'sm fill') : ''}${esc(a.title || 'Announcement')}</div>
+    ${list.length ? list.map(a => `<div class="ann"><div class="row between" style="flex-wrap:nowrap"><div class="t">${a.pinned === 'TRUE' ? icon('push_pin', 'sm fill') : ''}${esc(a.title || 'Announcement')}${a.userId ? ' ' + pill('Only for ' + ((S.data.students || []).find(x => x.id === a.userId) || {}).name, 'violet', 'lock') : ''}</div>
       <div class="row" style="flex-wrap:nowrap"><button class="icon-btn sm" data-act="pinAnn" data-id="${esc(a.id)}" data-on="${a.pinned === 'TRUE' ? '' : '1'}" title="${a.pinned === 'TRUE' ? 'Unpin' : 'Pin'}">${icon('push_pin')}</button><button class="icon-btn sm" data-act="delAnn" data-id="${esc(a.id)}" title="Delete">${icon('delete')}</button></div></div>
-      ${a.body ? `<div class="b">${rich(a.body)}</div>` : ''}<div class="small muted">${fmtDT(a.createdAt)}</div></div>`).join('') : `<div class="muted small">Nothing posted yet.</div>`}
+      ${a.kind === 'report' ? `<details><summary class="small" style="cursor:pointer;color:var(--primary)">Preview report card</summary>${reportCard(a, { open: true })}</details>` : a.body ? `<div class="b">${rich(a.body)}</div>` : ''}<div class="small muted">${fmtDT(a.createdAt)}</div></div>`).join('') : `<div class="muted small">Nothing posted yet.</div>`}
   </div></div></div>`;
 };
 
