@@ -381,6 +381,29 @@ else {
   ok(/opens at 09:00/.test(err('startExam', Z, { examId: 'sched-1' })), 'cannot start before opensAt');
   __setNow('2026-11-27T03:31:00Z');            // 09:01
   ok(/started/.test(must('startExam', Z, { examId: 'sched-1' }).msg), 'starts after opensAt');
+  // review & redo
+  {
+    for (let k = 0; k < 4; k++) {
+      const cur = must('bootstrap', Y).exams.find(x => x.id === e.id);
+      if (cur.attempt.status === 'submitted') break;
+      must('submitExamSection', Y, { examId: e.id, sectionId: cur.sections[cur.attempt.section].id, answers: {} });
+    }
+    const atY = must('bootstrap', Y).exams.find(x => x.id === e.id).attempt;
+    ok(atY.status === 'submitted', 'Y attempt submitted');
+    ok(must('bootstrap', Y).exams.find(x => x.id === e.id).review === null, 'no review until released');
+    ok(/not open/.test(err('saveExamRedo', Y, { examId: e.id, qid: 'D2', answer: 'x' })), 'redo blocked until released');
+    ok(/open/.test(must('saveExam', T, { id: e.id, reviewOpen: true }).msg), 'instructor opens review');
+    const rv = must('bootstrap', Y).exams.find(x => x.id === e.id).review;
+    ok(rv && rv.questions.A1.correct === 1 && rv.questions.D2.tests[0].expect === 'Positive\nOdd' && rv.questions.B1.key, 'review shows key, correct option, test expectations');
+    let rr = must('saveExamRedo', Y, { examId: e.id, qid: 'D2', answer: 'print(1)', testOutputs: ['Positive\nOdd', 'Negative\nEven', 'zero even'] });
+    ok(/tests passed 3\/3/.test(rr.msg), 'redo graded: ' + rr.msg);
+    ok(rr.state.exams.find(x => x.id === e.id).review.questions.D2.redo.result === '3/3', 'redo visible in review');
+    ok(/cannot be redone/.test(err('saveExamRedo', Y, { examId: e.id, qid: 'A1', answer: '1' })), 'MCQ redo not stored');
+    const gx = must('getExamAttempt', T, { id: must('bootstrap', T).examAttempts.find(x => x.examId === e.id).id });
+    ok(gx.attempt.redo.D2.result === '3/3', 'instructor sees redo');
+    must('saveExam', T, { id: e.id, reviewOpen: false });
+    ok(must('bootstrap', Y).exams.find(x => x.id === e.id).review === null, 'review closed again');
+  }
   must('saveExam', T, { id: e.id, active: false });
   ok(!must('bootstrap', Y).exams.some(x => x.id === e.id), 'inactive exam hidden');
 }

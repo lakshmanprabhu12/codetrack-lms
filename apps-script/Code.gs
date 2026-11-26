@@ -48,9 +48,9 @@ const SCHEMA = {
   Doubts: ['id', 'userId', 'dayId', 'question', 'answer', 'shared', 'status', 'askedAt', 'answeredAt'],
   Reflections: ['id', 'userId', 'date', 'dayId', 'learned', 'stuck', 'confidence', 'createdAt', 'updatedAt'],
   Points: ['id', 'userId', 'key', 'points', 'reason', 'createdAt'],
-  Exams: ['id', 'title', 'description', 'durationMin', 'sections', 'active', 'createdAt', 'updatedAt', 'maxExits', 'opensAt'],
+  Exams: ['id', 'title', 'description', 'durationMin', 'sections', 'active', 'createdAt', 'updatedAt', 'maxExits', 'opensAt', 'reviewOpen'],
   ProctorFlags: ['id', 'attemptId', 'examId', 'userId', 'type', 'label', 'section', 'at', 'fileId', 'fileUrl'],
-  ExamAttempts: ['id', 'examId', 'userId', 'startedAt', 'section', 'answers', 'testResults', 'sectionLog', 'submittedAt', 'status', 'autoScore', 'marks', 'total', 'integrity', 'comment']
+  ExamAttempts: ['id', 'examId', 'userId', 'startedAt', 'section', 'answers', 'testResults', 'sectionLog', 'submittedAt', 'status', 'autoScore', 'marks', 'total', 'integrity', 'comment', 'redo']
 };
 
 const DEFAULT_SETTINGS = {
@@ -171,6 +171,7 @@ const ROUTES = {
   resetExamAttempt: { fn: resetExamAttempt_, write: true, admin: true },
   saveExam: { fn: saveExam_, write: true, admin: true },
   proctorFlag: { fn: proctorFlag_, write: true, student: true, noState: true },
+  saveExamRedo: { fn: saveExamRedo_, write: true, student: true },
   proctorImage: { fn: proctorImage_, admin: true },
   exportExam: { fn: function (u, p) { const e = byId_('Exams', p.id); if (!e) throw new Error('Exam not found.'); return JSON.stringify(examObj_(e), null, 1); }, admin: true }
 };
@@ -873,7 +874,7 @@ const EXAM = { GRACE_MIN: 3, TYPES: ['mcq', 'text', 'code'] };
 function examObj_(e) {
   return {
     id: e.id, title: e.title, description: e.description, durationMin: num_(e.durationMin) || 120,
-    maxExits: e.maxExits === '' || e.maxExits === undefined ? 5 : num_(e.maxExits), active: bool_(e.active), opensAt: String(e.opensAt || '').replace(' ', 'T').slice(0, 16), sections: parseJson_(e.sections, []), createdAt: e.createdAt, updatedAt: e.updatedAt
+    maxExits: e.maxExits === '' || e.maxExits === undefined ? 5 : num_(e.maxExits), active: bool_(e.active), reviewOpen: bool_(e.reviewOpen), opensAt: String(e.opensAt || '').replace(' ', 'T').slice(0, 16), sections: parseJson_(e.sections, []), createdAt: e.createdAt, updatedAt: e.updatedAt
   };
 }
 function examQuestions_(ex) {
@@ -917,9 +918,46 @@ function studentExams_(u) {
       attempt: at ? {
         id: at.id, status: at.status, section: num_(at.section), startedAt: at.startedAt, submittedAt: at.submittedAt,
         deadline: examDeadline_(ex, at), sectionLog: parseJson_(at.sectionLog, {})
-      } : null
+      } : null,
+      review: at && at.status === 'submitted' && ex.reviewOpen ? examReview_(ex, at) : null
     };
   });
+}
+
+/* Review & redo: released per exam by the instructor. Shows the student's answers, marks and the key. */
+function examReview_(ex, at) {
+  const answers = parseJson_(at.answers, {}), results = parseJson_(at.testResults, {}), marks = parseJson_(at.marks, {}), redo = parseJson_(at.redo, {});
+  const qs = {};
+  examQuestions_(ex).forEach(function (q) {
+    const a = answers[q.id];
+    const o = { answer: a === undefined ? null : a, max: num_(q.marks) };
+    if (q.type === 'mcq') { o.correct = q.answer; o.got = a === q.answer ? num_(q.marks) : 0; }
+    else if (marks[q.id] !== undefined) o.got = num_(marks[q.id]);
+    if (q.key) o.key = q.key;
+    if (q.type === 'code') { o.tests = (q.tests || []).map(function (t) { return { input: t.input, expect: t.expect }; }); if (results[q.id]) o.result = results[q.id].score; }
+    if (redo[q.id]) o.redo = redo[q.id];
+    qs[q.id] = o;
+  });
+  return { total: at.total === '' ? null : num_(at.total), autoScore: num_(at.autoScore), questions: qs };
+}
+
+function saveExamRedo_(u, p) {
+  const e = byId_('Exams', clean_(p.examId, 40));
+  if (!e) throw new Error('Exam not found.');
+  const ex = examObj_(e);
+  if (!ex.reviewOpen) throw new Error('Review & redo is not open for this exam yet.');
+  const at = myAttempt_(u, ex.id);
+  if (!at || at.status !== 'submitted') throw new Error('Finish the exam first.');
+  const q = examQuestions_(ex).find(function (x) { return x.id === p.qid; });
+  if (!q || q.type === 'mcq') throw new Error('This question cannot be redone here.');
+  const answer = String(p.answer === undefined || p.answer === null ? '' : p.answer).slice(0, q.type === 'code' ? 4000 : 1500);
+  if (!answer.trim()) throw new Error('Write your answer first.');
+  const redo = parseJson_(at.redo, {});
+  const rec = { answer: answer, at: now_() };
+  if (q.type === 'code' && (q.tests || []).length) rec.result = gradeAllLines_(q.tests, p.testOutputs).score;
+  redo[q.id] = rec;
+  update_('ExamAttempts', at, { redo: JSON.stringify(redo) });
+  return 'Redo saved' + (rec.result ? ' · tests passed ' + rec.result : '') + '.';
 }
 
 function attemptSummary_(x, nameOf) {
@@ -1050,7 +1088,7 @@ function getExamAttempt_(_, p) {
       id: at.id, examId: at.examId, studentName: u ? u.name : '(removed)', status: at.status, section: num_(at.section),
       startedAt: at.startedAt, submittedAt: at.submittedAt, answers: parseJson_(at.answers, {}), testResults: parseJson_(at.testResults, {}),
       sectionLog: parseJson_(at.sectionLog, {}), autoScore: num_(at.autoScore), marks: parseJson_(at.marks, {}),
-      total: at.total === '' ? null : num_(at.total), integrity: parseJson_(at.integrity, null), comment: at.comment,
+      total: at.total === '' ? null : num_(at.total), integrity: parseJson_(at.integrity, null), comment: at.comment, redo: parseJson_(at.redo, {}),
       camera: rows_('ProctorFlags').filter(function (f) { return f.attemptId === at.id; })
         .sort(function (a, b) { return String(a.at).localeCompare(b.at); })
         .map(function (f) { return { type: f.type, label: f.label, section: f.section, at: f.at, fileUrl: f.fileUrl, thumb: proctorThumb_(f.fileId) }; })
@@ -1093,9 +1131,13 @@ function resetExamAttempt_(_, p) {
 }
 
 function saveExam_(_, p) {
-  if (p.json === undefined && p.id) {                       // quick toggle
+  if (p.json === undefined && p.id) {                       // quick toggles
     const row = byId_('Exams', p.id);
     if (!row) throw new Error('Exam not found.');
+    if (p.reviewOpen !== undefined) {
+      update_('Exams', row, { reviewOpen: bool_(p.reviewOpen) ? 'TRUE' : 'FALSE', updatedAt: now_() });
+      return bool_(p.reviewOpen) ? 'Review & redo is open: students can see the paper, their marks and the key.' : 'Review & redo closed.';
+    }
     update_('Exams', row, { active: p.active ? 'TRUE' : 'FALSE', updatedAt: now_() });
     return p.active ? 'Exam is open to students.' : 'Exam hidden from students.';
   }

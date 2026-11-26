@@ -35,7 +35,8 @@ function examCards(compact) {
     const at = e.attempt;
     const st = !at ? 'new' : at.status === 'submitted' ? 'done' : 'progress';
     const btn = st === 'new' && notYet(e) ? `<span class="xm-soon">${icon('schedule')} ${esc(opensText(e))}</span><button class="btn filled ${compact ? 'sm' : ''}" data-act="xmOpen" data-id="${esc(e.id)}">${icon('menu_book')} Read the rules</button>`
-      : st === 'done' ? `<span class="pill green">${icon('task_alt')} Submitted ${at.submittedAt ? fmtDT(at.submittedAt) : ''}</span>`
+      : st === 'done' ? (e.review ? `${e.review.total !== null ? `<span class="xm-soon">${icon('grading')} ${esc(String(e.review.total))} / ${e.total}</span>` : ''}<button class="btn filled ${compact ? 'sm' : ''}" data-act="xmReview" data-id="${esc(e.id)}">${icon('rate_review')} Review &amp; redo</button>`
+        : `<span class="pill green">${icon('task_alt')} Submitted ${at.submittedAt ? fmtDT(at.submittedAt) : ''}</span>`)
       : `<button class="btn filled ${compact ? 'sm' : ''}" data-act="xmOpen" data-id="${esc(e.id)}">${icon(st === 'new' ? 'edit_document' : 'play_arrow')} ${st === 'new' ? 'Take exam' : 'Resume exam'}</button>`;
     return `<div class="xm-card">
       <span class="xm-ic">${icon('assignment')}</span>
@@ -82,6 +83,7 @@ function renderXm() {
   const e = examById(S.xm.examId);
   S.mounted = null;
   if (!e) { S.xm = null; return render(); }
+  if (S.xm.phase === 'review') return renderReview(e);
   if (S.xm.phase === 'rules') return renderRules(e);
   if (S.xm.phase === 'done') return renderDone(e);
   return renderSection(e);
@@ -165,7 +167,7 @@ function labFor(e, q) {
   return A.getLab(key, { exam: true, title: q.id.toLowerCase() + '.py', tests: q.tests || [],
     starter: '# ' + q.id + ' · ' + (q.title || '') + '\n\n' });
 }
-function destroyLabs() { Object.keys(S.labs || {}).filter(k => k.indexOf(':xm:') >= 0).forEach(k => A.destroyLab(k)); }
+function destroyLabs() { Object.keys(S.labs || {}).filter(k => k.indexOf(':xm:') >= 0 || k.indexOf(':rv:') >= 0).forEach(k => A.destroyLab(k)); }
 function curSection(e) { return e.sections[e.attempt.section]; }
 function isAnswered(e, q) {
   if (q.type === 'code') { const l = S.labs[A.labKey('xm', e.attempt.id + ':' + q.id)]; return !!(l && l.getCode().replace(/^#.*$/gm, '').trim()); }
@@ -283,6 +285,95 @@ function renderDone(e) {
   </div></div>`;
 }
 
+/* ---------- review & redo ---------- */
+function needsRedo(q, r) {
+  if (!r) return false;
+  if (r.got !== undefined) return r.got < r.max;
+  return q.type !== 'mcq' && (r.answer === null || !String(r.answer).trim());
+}
+function openReview(id) {
+  const e = examById(id);
+  if (!e || !e.review) return toast('Review is not open for this exam yet.', true);
+  S.xm = { examId: id, phase: 'review', filter: 'redo' };
+  render(); window.scrollTo(0, 0);
+}
+function reviewLab(e, q, r) {
+  const key = A.labKey('rv', e.attempt.id + ':' + q.id);
+  const start = (r.redo && r.redo.answer) || (r.answer ? String(r.answer) : '# ' + q.id + ' · ' + (q.title || '') + '\n\n');
+  A.getLab(key, { title: q.id.toLowerCase() + '_redo.py', tests: (r.tests || []).map(t => ({ input: t.input, expect: t.expect })), starter: start });
+  return key;
+}
+function renderReview(e) {
+  const rv = e.review, f = S.xm.filter;
+  const all = e.sections.reduce((n, s) => n.concat(s.questions), []);
+  const todo = all.filter(q => needsRedo(q, rv.questions[q.id])).length;
+  const markPill = (q, r) => r.got === undefined ? `<span class="pill">${icon('hourglass_empty', 'sm')} not marked</span>`
+    : `<span class="pill ${r.got >= r.max ? 'green' : r.got > 0 ? 'amber' : 'red'}">${esc(String(r.got))} / ${r.max}</span>`;
+  const secHtml = e.sections.map(s => {
+    const qs = s.questions.filter(q => f === 'all' || needsRedo(q, rv.questions[q.id]));
+    if (!qs.length) return '';
+    return `<div class="rv-sec"><div class="xm-kicker">Section ${esc(s.id)}</div><h2 class="rv-h">${esc(s.title)}</h2>${qs.map(q => {
+      const r = rv.questions[q.id] || {};
+      const redo = needsRedo(q, r);
+      let body = '';
+      if (q.type === 'mcq') {
+        body = `<div class="xm-opts">${q.options.map((o, j) => {
+          const cls = j === r.correct ? 'right' : j === r.answer ? 'wrong' : '';
+          return `<div class="xm-opt rv-opt ${cls}"><span class="xm-letter">${'abcdefgh'[j]}</span><span class="grow">${esc(o)}</span>${j === r.correct ? `<span class="rv-tag ok">${icon('check', 'sm')} Correct answer</span>` : j === r.answer ? `<span class="rv-tag bad">${icon('close', 'sm')} Your answer</span>` : ''}</div>`;
+        }).join('')}</div>${r.answer === null || r.answer === undefined ? `<div class="rv-note">${icon('info', 'sm')} You didn't answer this one.</div>` : ''}`;
+      } else {
+        const yours = r.answer === null || r.answer === undefined || !String(r.answer).trim() ? '<span class="muted">(not answered)</span>' : '';
+        body = `<div class="rv-grid">
+          <div><div class="rv-lbl">${icon('person', 'sm')} Your exam answer</div>${yours || (q.type === 'code' || q.mono ? `<pre class="rv-pre">${esc(r.answer)}</pre>` : `<div class="rv-box">${rich(r.answer)}</div>`)}
+            ${r.result ? `<div class="rv-note">${icon('fact_check', 'sm')} Auto-tests in the exam: <b>${esc(r.result)}</b></div>` : ''}</div>
+          ${r.key ? `<div><div class="rv-lbl ok">${icon('key', 'sm')} Key</div><div class="rv-box key">${rich(r.key)}</div></div>` : ''}
+        </div>`;
+        if (q.type === 'code') {
+          body += `<div class="rv-redo"><div class="rv-lbl">${icon('replay', 'sm')} Redo: fix your code below. Press <b>Run</b> to try it and <b>Run tests</b> to check it against every test.</div>${A.labMount(reviewLab(e, q, r))}
+            <div class="row" style="margin-top:10px;gap:10px">${r.redo ? `<span class="pill ${r.redo.result && r.redo.result.split('/')[0] === r.redo.result.split('/')[1] ? 'green' : 'amber'}">${icon('task_alt', 'sm')} Redo saved ${esc(fmtDT(r.redo.at))}${r.redo.result ? ' · tests ' + esc(r.redo.result) : ''}</span>` : ''}<span class="grow"></span>
+            <button class="btn filled" data-act="xmRedo" data-q="${esc(q.id)}">${icon('save')} Save my redo</button></div></div>`;
+        } else {
+          body += `<div class="rv-redo"><div class="rv-lbl">${icon('replay', 'sm')} Redo: write a better answer</div>
+            <textarea class="xm-text ${q.mono ? 'mono' : ''}" id="rv-${esc(q.id)}" rows="4" spellcheck="${q.mono ? 'false' : 'true'}">${esc((r.redo && r.redo.answer) || '')}</textarea>
+            <div class="row" style="margin-top:8px;gap:10px">${r.redo ? `<span class="pill green">${icon('task_alt', 'sm')} Redo saved ${esc(fmtDT(r.redo.at))}</span>` : ''}<span class="grow"></span>
+            <button class="btn tonal" data-act="xmRedo" data-q="${esc(q.id)}">${icon('save')} Save my redo</button></div></div>`;
+        }
+      }
+      return `<div class="xm-q rv-q ${redo ? 'todo' : ''}" id="q-${esc(q.id)}">
+        <div class="xm-qhead"><span class="xm-qn">${esc(q.id)}</span><div class="grow">${q.title ? `<div class="xm-qtitle">${esc(q.title)}</div>` : ''}<div class="xm-qtext">${rich(q.text)}</div></div>
+          <div class="rv-right">${markPill(q, r)}${redo ? `<span class="pill red">${icon('replay', 'sm')} To redo</span>` : ''}</div></div>
+        ${q.code ? `<pre class="code xm-snip"><code class="language-python">${esc(q.code)}</code></pre>` : ''}${body}</div>`;
+    }).join('')}</div>`;
+  }).join('');
+  $('#app').innerHTML = `<div class="xm-page"><div class="rv-wrap">
+    <button class="btn text" data-act="xmClose" style="margin:-8px 0 6px -12px">${icon('arrow_back')} Back</button>
+    <div class="rv-head"><div class="grow"><div class="xm-kicker">${icon('rate_review')} Review &amp; redo</div><h1 class="xm-h1">${esc(e.title)}</h1>
+      <p class="muted" style="margin:0">See your answers, your marks and the key. Questions marked <b>To redo</b> are where you lost marks: fix them here.</p></div>
+      ${rv.total !== null ? `<div class="rv-score"><b>${esc(String(rv.total))}</b><span>/ ${e.total}</span></div>` : ''}</div>
+    <div class="row" style="gap:8px;margin:14px 0 4px">
+      <button class="chip ${f === 'redo' ? 'on' : ''}" data-act="xmRvFilter" data-f="redo">${icon('replay', 'sm')} To redo (${todo})</button>
+      <button class="chip ${f === 'all' ? 'on' : ''}" data-act="xmRvFilter" data-f="all">All questions (${all.length})</button></div>
+    ${secHtml || emptyState('celebration', 'Nothing to redo. Every question got full marks!')}
+  </div></div>`;
+  A.afterRender($('#app'));
+}
+async function saveRedo(qid) {
+  const e = examById(S.xm.examId);
+  const q = e.sections.reduce((n, s) => n.concat(s.questions), []).find(x => x.id === qid);
+  let answer, outs = [];
+  if (q.type === 'code') {
+    const lab = S.labs[A.labKey('rv', e.attempt.id + ':' + qid)];
+    answer = lab ? lab.getCode() : '';
+    if (lab && answer.trim()) outs = (await lab.runTests(false)) || [];
+  } else answer = ($('#rv-' + qid) || {}).value || '';
+  if (!answer.trim()) return toast('Write your answer first.', true);
+  try {
+    const r = await call('saveExamRedo', { examId: e.id, qid, answer, testOutputs: outs });
+    S.data = r.state; toast(r.msg);
+    const y = window.scrollY; render(); window.scrollTo(0, y);
+  } catch (x) { toast(x.message, true); }
+}
+
 /* ---------- timer, focus tracking, overlay ---------- */
 function left() { return S.xm && S.xm.end ? S.xm.end - (Date.now() + (S.xm.skew || 0)) : 0; }
 function startTimer() {
@@ -353,6 +444,9 @@ Object.assign(A.ACTIONS, {
   xmOpen: el => open(el.dataset.id),
   xmClose: close,
   xmStart: start,
+  xmReview: el => openReview(el.dataset.id),
+  xmRvFilter: el => { S.xm.filter = el.dataset.f; render(); window.scrollTo(0, 0); },
+  xmRedo: el => saveRedo(el.dataset.q),
   xmRefresh: async () => { try { S.data = await call('bootstrap'); render(); } catch (x) { toast(x.message, true); } },
   xmSubmit: () => submitSection(false),
   xmResume: () => { hideOverlay(); try { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); } catch (x) { /* ignore */ } }

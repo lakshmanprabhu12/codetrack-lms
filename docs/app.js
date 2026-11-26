@@ -512,7 +512,7 @@ function reportCard(a, opts) {
     <header class="rc-head">
       <div class="grow"><div class="rc-kicker">${icon('workspace_premium', 'sm')} Report card${opts.forName ? ' · ' + esc(opts.forName) : ''}</div>
         <h2>${esc(r.exam || a.title)}</h2><div class="rc-sub">${esc(r.student || '')}${r.date ? ' · ' + esc(r.date) : ''}</div>
-        ${r.badge ? `<div class="rc-badge">${esc(r.badge)}</div>` : ''}</div>
+        ${r.badge ? `<div class="rc-badge">${esc(r.badge)}</div>` : ''}${(() => { const ex = (S.data.exams || []).find(x => (x.id === r.examId || x.title === r.exam) && x.review); return ex && !opts.forName ? `<button class="btn rc-cta" data-act="xmReview" data-id="${esc(ex.id)}">${icon('rate_review')} Open the paper &amp; redo</button>` : ''; })()}</div>
       <div class="rc-ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" class="tr"/><circle cx="50" cy="50" r="42" class="fg" stroke-dasharray="${(C * pct / 100).toFixed(1)} ${C.toFixed(1)}"/></svg>
         <div><b>${esc(String(r.total))}</b><span>/ ${esc(String(r.max || 100))}</span></div></div>
     </header>
@@ -1313,6 +1313,7 @@ V.exams = () => {
   ${ex.length ? `<div class="list card" style="padding:6px 10px;margin-bottom:16px">${ex.map(e => `<div class="list-item">
       <span class="lead-icon ${e.active ? 'green' : ''}">${icon('quiz')}</span>
       <div class="grow"><div class="title">${esc(e.title)}</div><div class="meta">${totalOf(e.id)} marks · ${e.durationMin} min${e.opensAt ? ' · opens ' + fmtDT(e.opensAt) : ''} · ${e.sections.map(s => s.id).join(' · ')} · ${plural(att.filter(a => a.examId === e.id).length, 'attempt')}</div></div>
+      <label class="switch" title="Students can see the paper, their marks and the key, and redo questions"><input type="checkbox" data-change="xmReviewOpen" data-id="${esc(e.id)}" ${e.reviewOpen ? 'checked' : ''}><span class="track"></span><span class="small">Review &amp; redo</span></label>
       <label class="switch"><input type="checkbox" data-change="xmActive" data-id="${esc(e.id)}" ${e.active ? 'checked' : ''}><span class="track"></span><span class="small">${e.active ? 'Open' : 'Hidden'}</span></label>
       <button class="icon-btn sm" data-act="xmJson" data-id="${esc(e.id)}" title="Edit JSON">${icon('edit')}</button></div>`).join('')}</div>`
     : emptyState('quiz', 'No exams yet. Use "New / import exam" and paste the exam JSON.')}
@@ -1356,6 +1357,7 @@ async function xmMarkDialog(id) {
         ${q.type === 'code' || q.mono ? `<pre class="code"><code class="language-python">${esc(a || '(no answer)')}</code></pre>` : `<div class="xm-ans-text">${a ? rich(a) : '<span class="muted">(no answer)</span>'}</div>`}
         ${tr ? `<div class="row" style="gap:6px;margin-top:8px">${scorePill(tr.score)}${tr.results.map((t, i) => `<span class="pill ${t.ok ? 'green' : 'red'}" title="${esc(t.output)}">Test ${i + 1}: ${esc((q.tests[i] || {}).input || '').replace(/\n/g, ' / ')}</span>`).join('')}</div>` : ''}
         ${q.key ? `<div class="outcomes" style="margin-top:8px">${icon('key')}<div><b>Key:</b> ${rich(q.key)}</div></div>` : ''}
+        ${at.redo && at.redo[q.id] ? `<div class="rv-admin"><div class="rv-lbl">${icon('replay', 'sm')} Redo saved ${esc(fmtDT(at.redo[q.id].at))}${at.redo[q.id].result ? ' · tests ' + esc(at.redo[q.id].result) : ''}</div>${q.type === 'code' || q.mono ? `<pre class="code"><code class="language-python">${esc(at.redo[q.id].answer)}</code></pre>` : `<div class="xm-ans-text">${rich(at.redo[q.id].answer)}</div>`}</div>` : ''}
         ${mk(q)}</div>`;
     }).join('');
     const mcqs = s.questions.filter(q => q.type === 'mcq');
@@ -1733,6 +1735,7 @@ const CHANGES = {
     r.readAsText(f);
   },
   xmActive: el => act('saveExam', { id: el.dataset.id, active: el.checked }),
+  xmReviewOpen: el => act('saveExam', { id: el.dataset.id, reviewOpen: el.checked }),
   xmFilter: el => { S.sub.xmFilter = el.value; renderPage(); },
   amode: el => {
     const f = el.closest('form');
